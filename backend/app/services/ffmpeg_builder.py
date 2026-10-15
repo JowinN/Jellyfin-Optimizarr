@@ -22,11 +22,19 @@ class FFmpegCommandBuilder:
 
         # Hardware Acceleration Inputs
         hw_mode = hwaccel_override or profile.hwaccel_type
+        if hw_mode in ("cuda", "nvenc") and not os.path.exists("/usr/local/cuda"):
+            # When running on host without NVIDIA CUDA:
+            hw_mode = "auto"
         if hw_mode == "auto":
             hw_mode = settings.HWACCEL_MODE
         if hw_mode == "auto":
             if os.path.exists(settings.DRI_DEVICE):
-                hw_mode = "vaapi"
+                # Skylake (Intel Gen 9 / HD 520) ONLY supports h264_vaapi.
+                # It does NOT have hardware encoders for AV1 or HEVC.
+                if profile.video_codec in ("av1", "youtube", "hevc", "h265"):
+                    hw_mode = "cpu_only"
+                else:
+                    hw_mode = "vaapi"
             else:
                 hw_mode = "cpu_only"
 
@@ -260,7 +268,7 @@ class FFmpegCommandBuilder:
                     args.extend(["-maxrate", f"{cap_rate}k", "-bufsize", f"{int(cap_rate * 1.5)}k"])
             args.extend(["-pix_fmt", "yuv420p"])
         elif use_vaapi:
-            encoder = "hevc_vaapi" if target_codec in ("hevc", "h265", "youtube", "av1") else "h264_vaapi"
+            encoder = "hevc_vaapi" if target_codec in ("hevc", "h265") else "h264_vaapi"
             args.extend(["-c:v", encoder])
             if target_bitrate_kbps > 0:
                 args.extend(["-b:v", f"{target_bitrate_kbps}k", "-maxrate", f"{int(target_bitrate_kbps * 1.15)}k"])

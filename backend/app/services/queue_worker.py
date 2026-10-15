@@ -229,10 +229,18 @@ class QueueWorker:
                 await self._monitor_ffmpeg_progress(session, job, media_item.duration_seconds)
 
                 returncode = await self._current_process.wait()
-                self._current_process = None
-
                 if returncode != 0:
-                    raise RuntimeError(f"FFmpeg exited with non-zero status code: {returncode}")
+                    err_msg = ""
+                    if self._current_process.stderr:
+                        try:
+                            raw_err = await self._current_process.stderr.read()
+                            lines = [l.strip() for l in raw_err.decode(errors="replace").splitlines() if l.strip()]
+                            err_msg = " | ".join(lines[-3:])
+                        except Exception:
+                            pass
+                    self._current_process = None
+                    raise RuntimeError(f"FFmpeg failed with exit code {returncode}: {err_msg[:300]}")
+                self._current_process = None
 
                 # Stage: VALIDATION
                 job.stage = "validating"
