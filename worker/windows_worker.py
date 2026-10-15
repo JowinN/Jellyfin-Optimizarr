@@ -403,10 +403,6 @@ class WindowsTranscodeWorker:
             use_gpu = True
 
         cmd = [self.ffmpeg_path, "-y"]
-        source_codec = media.get("video_codec", "").lower()
-        if source_codec in ["h264", "avc"] and has_nvenc:
-            cmd.extend(["-hwaccel", "auto"])
-
         cmd.extend(["-i", input_file])
 
         # Video Mapping & Encoding
@@ -585,11 +581,13 @@ class WindowsTranscodeWorker:
             log(f"Command: {' '.join(cmd[:12])} ...", Colors.DIM)
 
             # 4. Run FFmpeg and stream progress
+            stderr_log_path = os.path.join(self.temp_dir, f"ffmpeg_{job_id}.stderr.log")
+            stderr_file = open(stderr_log_path, "w", encoding="utf-8", errors="replace")
             self.active_process = subprocess.Popen(
                 cmd,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
+                stderr=stderr_file,
                 text=True,
                 bufsize=1,
             )
@@ -657,6 +655,10 @@ class WindowsTranscodeWorker:
 
             self.active_process.wait()
             ret_code = self.active_process.returncode
+            try:
+                stderr_file.close()
+            except Exception:
+                pass
             print()
 
             if self._flag_job_cancelled:
@@ -664,9 +666,11 @@ class WindowsTranscodeWorker:
 
             if ret_code != 0:
                 stderr_err = ""
-                if self.active_process.stderr:
+                if os.path.exists(stderr_log_path):
                     try:
-                        stderr_err = self.active_process.stderr.read()
+                        with open(stderr_log_path, "r", encoding="utf-8", errors="replace") as f:
+                            lines = [ln.strip() for ln in f.readlines() if ln.strip()]
+                            stderr_err = " | ".join(lines[-4:])
                     except Exception:
                         pass
                 raise RuntimeError(f"FFmpeg failed with exit code {ret_code}: {stderr_err[:300]}")
