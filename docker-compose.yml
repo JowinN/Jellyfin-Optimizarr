@@ -4,7 +4,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: jellyfin-media-optimizer:latest
+    image: jowinnadar/jellyfin-optimizarr:latest
     restart: unless-stopped
 
     # Optional hardware acceleration for Intel Quick Sync & VAAPI

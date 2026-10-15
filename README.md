@@ -6,7 +6,8 @@
 **Reclaim 40%–75% of your storage automatically while keeping pristine video quality, all audio tracks, and zero risk.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-purple.svg)](LICENSE)
-[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?logo=docker&logoColor=white)](docker-compose.yml)
+[![Docker Hub](https://img.shields.io/badge/Docker%20Hub-jowinnadar%2Fjellyfin--optimizarr-blue?logo=docker&logoColor=white)](https://hub.docker.com/r/jowinnadar/jellyfin-optimizarr)
+[![Docker Pulls](https://img.shields.io/docker/pulls/jowinnadar/jellyfin-optimizarr?logo=docker&logoColor=white)](https://hub.docker.com/r/jowinnadar/jellyfin-optimizarr)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.109+-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
 [![React 18](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)](https://react.dev)
 [![Jellyfin](https://img.shields.io/badge/Jellyfin-Native_Integration-00A4DC?logo=jellyfin&logoColor=white)](https://jellyfin.org)
@@ -110,7 +111,12 @@ Clients / Mobile  ────┼─►│   Jellyfin-Optimizarr (8097)     │ 
 
 ## ⚡ Quick Start in 2 Minutes
 
-### 1. `docker-compose.yml`
+### 1. Pull Image directly from Docker Hub
+```bash
+docker pull jowinnadar/jellyfin-optimizarr:latest
+```
+
+### 2. `docker-compose.yml`
 
 Create or add Jellyfin-Optimizarr to your Docker Compose setup:
 
@@ -120,7 +126,7 @@ version: "3.8"
 services:
   jellyfin-optimizarr:
     container_name: jellyfin-optimizarr
-    image: ghcr.io/jowinn/jellyfin-optimizarr:latest
+    image: jowinnadar/jellyfin-optimizarr:latest
     restart: unless-stopped
     ports:
       - "8097:8080"
