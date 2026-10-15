@@ -424,12 +424,8 @@ class WindowsTranscodeWorker:
         # Determine best available hardware or software encoder
         chosen_encoder = None
         if use_gpu and has_nvenc:
-            if codec == "av1":
-                # Strict AV1: only use GPU if GPU has dedicated AV1 encoder
-                if "av1_nvenc" in self.supported_encoders:
-                    chosen_encoder = "av1_nvenc"
-            elif codec == "youtube":
-                # YouTube preset: prefer GPU AV1, then HEVC, then H.264
+            if codec in ("av1", "youtube"):
+                # Prefer GPU AV1, then HEVC NVENC, then H.264 NVENC hardware acceleration
                 if "av1_nvenc" in self.supported_encoders:
                     chosen_encoder = "av1_nvenc"
                 elif "hevc_nvenc" in self.supported_encoders:
@@ -446,7 +442,7 @@ class WindowsTranscodeWorker:
                     chosen_encoder = "h264_nvenc"
 
         if chosen_encoder:
-            desc = "AV1/GPU Target Size" if codec in ("youtube", "av1") else "GPU Acceleration"
+            desc = "Hardware Accelerated GPU NVENC"
             cmd.extend([
                 "-c:v", chosen_encoder,
                 "-preset", "p4",
@@ -756,6 +752,22 @@ class WindowsTranscodeWorker:
 
         while self.is_running:
             try:
+                # Hot-reload capability: check for reload.flag
+                reload_flag = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reload.flag")
+                if os.path.exists(reload_flag):
+                    try:
+                        os.remove(reload_flag)
+                    except Exception:
+                        pass
+                    log("Reload flag detected! Re-executing worker process with latest code...", Colors.CYAN)
+                    global _single_instance_socket
+                    if _single_instance_socket:
+                        try:
+                            _single_instance_socket.close()
+                        except Exception:
+                            pass
+                    os.execv(sys.executable, [sys.executable] + sys.argv)
+
                 poll_res = self.poll_for_job()
                 if poll_res.get("has_job"):
                     self.run_transcode(poll_res)
