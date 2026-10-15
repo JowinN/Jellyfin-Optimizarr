@@ -142,6 +142,18 @@ class FFmpegCommandBuilder:
                     f"-c:a:{idx}", codec_flag,
                     f"-b:a:{idx}", f"{bitrate_k}k",
                 ])
+                # libopus requires stereo downmixing for multichannel inputs (e.g. 5.1(side), 7.1)
+                # to prevent fatal FFmpeg "Invalid channel layout for mapping family -1" errors,
+                # and maximizes acoustic fidelity for target bitrate profiles (8.5 MB/min).
+                track_channels = audio_tracks[idx].get("channels", 2)
+                should_downmix = (
+                    codec_flag == "libopus"
+                    or getattr(profile, "stereo_downmix_compatibility", False)
+                    or getattr(profile, "target_mb_per_minute", 0) > 0
+                    or track_channels > 2
+                )
+                if should_downmix and codec_flag in ("libopus", "aac", "libmp3lame"):
+                    args.extend([f"-ac:a:{idx}", "2"])
 
         elif policy == "keep_surround_add_aac":
             # Copy all original tracks
