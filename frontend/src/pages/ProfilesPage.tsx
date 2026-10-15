@@ -112,7 +112,11 @@ export const ProfilesPage: React.FC<ProfilesPageProps> = ({ profiles, onRefreshP
                 ) : (
                   <span className="badge badge-cyan">{p.video_codec.toUpperCase()}</span>
                 )}
-                {p.scale_down_percent > 0 ? (
+                {p.target_mb_per_minute > 0 ? (
+                  <span className="badge badge-emerald" style={{ fontWeight: 700, background: "rgba(16, 185, 129, 0.2)", border: "1px solid rgba(16, 185, 129, 0.4)" }}>
+                    🎯 {p.target_mb_per_minute} MB/min (~{Math.round((p.target_mb_per_minute * 120 / 1024) * 10) / 10}GB / 2hr)
+                  </span>
+                ) : p.scale_down_percent > 0 ? (
                   <span className="badge badge-emerald" style={{ fontWeight: 700 }}>
                     📉 {p.scale_down_percent}% Scale Down {p.scale_down_percent === 50 ? "(Half Size)" : ""}
                   </span>
@@ -134,7 +138,7 @@ export const ProfilesPage: React.FC<ProfilesPageProps> = ({ profiles, onRefreshP
               {/* Technical breakdown */}
               <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", borderTop: "1px solid var(--border-color)", paddingTop: "0.75rem" }}>
                 <div>Target Node: <strong style={{ color: p.preferred_node_id === "windows-node" ? "var(--accent-emerald)" : p.preferred_node_id === "local" ? "var(--accent-cyan)" : "var(--text-primary)" }}>{p.preferred_node_id === "windows-node" ? "🖥️ Windows PC (Quadro K620 GPU)" : p.preferred_node_id === "local" ? "🐧 Ubuntu Server (Local)" : "🔄 Any Available Node"}</strong></div>
-                <div>Audio: {p.video_codec === "youtube" ? "Opus (YouTube Standard)" : p.audio_policy === "copy_all" ? "Lossless Stream Copy" : p.preferred_audio_codec.toUpperCase()}</div>
+                <div>Audio: {p.preferred_audio_codec === "opus" || p.video_codec === "youtube" ? "Opus (High-Efficiency)" : p.audio_policy === "copy_all" ? "Lossless Stream Copy" : p.preferred_audio_codec.toUpperCase()}</div>
                 <div>Subtitles: {p.subtitle_policy === "copy_all" ? "Preserve All (SRT/ASS/PGS)" : "None"}</div>
                 <div>Hardware: {p.hwaccel_type.toUpperCase()}</div>
               </div>

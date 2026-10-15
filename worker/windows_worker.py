@@ -360,17 +360,22 @@ class WindowsTranscodeWorker:
         crf = profile.get("crf", 24)
         hwaccel_type = (profile.get("hwaccel_type") or "auto").lower()
 
-        # Scale down percentage calculation (e.g. 50% = half size of original)
+        # Scale down percentage & Target MB/min calculations
+        target_mb_min = float(profile.get("target_mb_per_minute", 0.0) or 0.0)
         scale_down = profile.get("scale_down_percent", 0) or 0
         source_size = job_data.get("source_size_bytes", 0)
         duration_sec = media.get("duration_seconds", 0)
         target_bitrate = profile.get("target_bitrate_kbps", 0) or 0
+        audio_kbps = profile.get("audio_bitrate_kbps", 96) or 96
 
-        if scale_down > 0 and source_size > 0 and duration_sec > 0:
+        if target_mb_min > 0:
+            total_target_kbps = int((target_mb_min * 1024 * 1024 * 8) / 60000)
+            target_bitrate = max(100, total_target_kbps - audio_kbps)
+            log(f"Target MB/min active: {target_mb_min} MB/min (Target: {total_target_kbps} kbps total, Video: {target_bitrate} kbps, Audio: {audio_kbps} kbps)", Colors.GREEN)
+        elif scale_down > 0 and source_size > 0 and duration_sec > 0:
             reduction_ratio = min(0.95, max(0.05, scale_down / 100.0))
             target_size_bytes = source_size * (1.0 - reduction_ratio)
             total_target_kbps = int((target_size_bytes * 8) / (duration_sec * 1000))
-            audio_kbps = profile.get("audio_bitrate_kbps", 128) or 128
             target_bitrate = max(100, total_target_kbps - audio_kbps)
             log(f"Scale-down target active: {scale_down}% (Target size: {target_size_bytes / (1024*1024):.1f} MB, Video Bitrate: {target_bitrate} kbps)", Colors.GREEN)
 
@@ -396,10 +401,28 @@ class WindowsTranscodeWorker:
         # Video Mapping & Encoding
         cmd.extend(["-map", "0:v:0"])
 
+        # Resolution scaling filter (never upscale, downscale 4K/1080p if requested)
+        res_mode = (profile.get("resolution_mode") or "original").lower()
+        vf_filters = []
+        if res_mode == "720p":
+            vf_filters.append("scale='min(1280,iw)':'min(720,ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2")
+        elif res_mode == "1080p":
+            vf_filters.append("scale='min(1920,iw)':'min(1080,ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2")
+        elif res_mode == "480p":
+            vf_filters.append("scale='min(854,iw)':'min(480,ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2")
+
+        if vf_filters:
+            cmd.extend(["-vf", ",".join(vf_filters)])
+
         # Determine best available hardware or software encoder
         chosen_encoder = None
         if use_gpu and has_nvenc:
-            if codec in ("youtube", "av1"):
+            if codec == "av1":
+                # Strict AV1: only use GPU if GPU has dedicated AV1 encoder
+                if "av1_nvenc" in self.supported_encoders:
+                    chosen_encoder = "av1_nvenc"
+            elif codec == "youtube":
+                # YouTube preset: prefer GPU AV1, then HEVC, then H.264
                 if "av1_nvenc" in self.supported_encoders:
                     chosen_encoder = "av1_nvenc"
                 elif "hevc_nvenc" in self.supported_encoders:
@@ -417,7 +440,7 @@ class WindowsTranscodeWorker:
 
         if chosen_encoder:
             bitrate_val = target_bitrate or 4500
-            desc = "YouTube Space Saver" if codec in ("youtube", "av1") else "GPU Acceleration"
+            desc = "AV1/GPU Target Size" if codec in ("youtube", "av1") else "GPU Acceleration"
             log(f"Utilizing NVIDIA GPU ({chosen_encoder}) for {desc} @ target {bitrate_val}k!", Colors.GREEN)
             cmd.extend([
                 "-c:v", chosen_encoder,
@@ -425,7 +448,8 @@ class WindowsTranscodeWorker:
                 "-rc", "vbr",
                 "-cq", str(int(crf) if crf else 22),
                 "-b:v", f"{bitrate_val}k",
-                "-maxrate", f"{int(bitrate_val * 1.3)}k",
+                "-maxrate", f"{int(bitrate_val * 1.15)}k",
+                "-bufsize", f"{int(bitrate_val * 2)}k",
                 "-pix_fmt", "yuv420p",
             ])
         elif use_gpu and has_mf:
@@ -436,16 +460,20 @@ class WindowsTranscodeWorker:
                 "-b:v", f"{bitrate_val}k",
                 "-pix_fmt", "yuv420p",
             ])
-        elif "youtube" in codec or "av1" in codec:
-            log("Utilizing YouTube AV1 compression (CPU software fallback).", Colors.YELLOW)
+        elif "av1" in codec or "youtube" in codec:
+            log("Utilizing AV1 compression (SVT-AV1 high efficiency).", Colors.GREEN)
             if "libsvtav1" in self.supported_encoders:
-                cmd.extend(["-c:v", "libsvtav1"])
+                cmd.extend(["-c:v", "libsvtav1", "-preset", "6"])
             elif "libaom-av1" in self.supported_encoders:
                 cmd.extend(["-c:v", "libaom-av1"])
             else:
-                cmd.extend(["-c:v", "libx265"])
+                cmd.extend(["-c:v", "libx265", "-preset", "faster"])
             if target_bitrate > 0:
-                cmd.extend(["-b:v", f"{target_bitrate}k"])
+                cmd.extend([
+                    "-b:v", f"{target_bitrate}k",
+                    "-maxrate", f"{int(target_bitrate * 1.15)}k",
+                    "-bufsize", f"{int(target_bitrate * 2)}k",
+                ])
             else:
                 cmd.extend(["-crf", str(int(crf + 4) if crf else 28)])
             cmd.extend(["-pix_fmt", "yuv420p10le" if media.get("bit_depth", 8) == 10 else "yuv420p"])
@@ -457,7 +485,11 @@ class WindowsTranscodeWorker:
                 "-tag:v", "hvc1",
             ])
             if target_bitrate > 0:
-                cmd.extend(["-b:v", f"{target_bitrate}k", "-maxrate", f"{int(target_bitrate * 1.3)}k"])
+                cmd.extend([
+                    "-b:v", f"{target_bitrate}k",
+                    "-maxrate", f"{int(target_bitrate * 1.15)}k",
+                    "-bufsize", f"{int(target_bitrate * 2)}k",
+                ])
             else:
                 cmd.extend(["-crf", str(crf)])
             if media.get("bit_depth", 8) == 10:
@@ -467,16 +499,20 @@ class WindowsTranscodeWorker:
         else:
             cmd.extend(["-c:v", "libx264"])
             if target_bitrate > 0:
-                cmd.extend(["-b:v", f"{target_bitrate}k"])
+                cmd.extend([
+                    "-b:v", f"{target_bitrate}k",
+                    "-maxrate", f"{int(target_bitrate * 1.15)}k",
+                    "-bufsize", f"{int(target_bitrate * 2)}k",
+                ])
             else:
                 cmd.extend(["-crf", str(min(22, int(crf) if crf else 22))])
             cmd.extend(["-preset", "veryfast", "-pix_fmt", "yuv420p"])
 
         # Audio Configuration
-        # YouTube preset strictly uses Opus, YouTube's primary audio standard
-        if codec == "youtube" or profile.get("preferred_audio_codec") == "opus":
-            log("Transcoding audio to Opus (YouTube space-efficient audio standard).", Colors.GREEN)
-            cmd.extend(["-map", "0:a?", "-c:a", "libopus", "-b:a", "128k"])
+        # YouTube & AV1 presets strictly use Opus high-efficiency audio
+        if codec in ("youtube", "av1") or profile.get("preferred_audio_codec") == "opus":
+            log(f"Transcoding audio to Opus @ {audio_kbps}k (high efficiency standard).", Colors.GREEN)
+            cmd.extend(["-map", "0:a?", "-c:a", "libopus", "-b:a", f"{audio_kbps}k"])
         else:
             # Audio Preservation: map all audio tracks, retain untouched lossless/surround
             cmd.extend(["-map", "0:a?", "-c:a", "copy"])

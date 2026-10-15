@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { X, Save, Sliders, Shield, Percent, Youtube, Info } from "lucide-react";
+import { X, Save, Sliders, Shield, Percent, Youtube, Info, Target, Sparkles } from "lucide-react";
 import { EncodingProfile } from "../types";
 import { api } from "../api";
 
@@ -23,6 +23,7 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
     rate_control_mode: profile?.rate_control_mode || "crf",
     crf: profile?.crf !== undefined ? profile.crf : 21.0,
     target_bitrate_kbps: profile?.target_bitrate_kbps || 0,
+    target_mb_per_minute: profile?.target_mb_per_minute !== undefined ? profile.target_mb_per_minute : 0.0,
     scale_down_percent: profile?.scale_down_percent !== undefined ? profile.scale_down_percent : 0,
     encoder_preset: profile?.encoder_preset || "medium",
     pixel_format: profile?.pixel_format || "yuv420p10le",
@@ -47,7 +48,20 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
         preferred_audio_codec: "opus",
         audio_policy: "transcode_all",
         audio_bitrate_kbps: 128,
-        scale_down_percent: prev.scale_down_percent === 0 ? 50 : prev.scale_down_percent,
+        scale_down_percent: prev.scale_down_percent === 0 && prev.target_mb_per_minute === 0 ? 50 : prev.scale_down_percent,
+        rate_control_mode: "target_bitrate",
+      }));
+      return;
+    }
+    if (field === "video_codec" && value === "av1") {
+      setFormData((prev) => ({
+        ...prev,
+        video_codec: "av1",
+        preferred_audio_codec: "opus",
+        audio_policy: "transcode_all",
+        audio_bitrate_kbps: 96,
+        target_mb_per_minute: prev.target_mb_per_minute === 0 ? 8.5 : prev.target_mb_per_minute,
+        resolution_mode: prev.resolution_mode === "original" ? "720p" : prev.resolution_mode,
         rate_control_mode: "target_bitrate",
       }));
       return;
@@ -128,13 +142,109 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
             </div>
           </div>
 
+          {/* Smart Target Size Budget (MB / Minute) */}
+          <div className="card" style={{ padding: "1.25rem", marginBottom: "1.25rem", border: "1px solid rgba(16, 185, 129, 0.4)", background: "rgba(16, 185, 129, 0.05)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <Target size={18} color="var(--accent-emerald)" />
+                <h3 style={{ fontSize: "0.95rem", fontWeight: 700, color: "var(--accent-emerald)" }}>
+                  Smart Target Size Budget (MB / Minute)
+                </h3>
+              </div>
+              <span className="badge badge-emerald" style={{ fontSize: "0.85rem", fontWeight: 800 }}>
+                {formData.target_mb_per_minute > 0 ? `${formData.target_mb_per_minute} MB/min Target` : "Off (CRF Mode)"}
+              </span>
+            </div>
+            <p style={{ fontSize: "0.78rem", color: "var(--text-muted)", marginBottom: "0.75rem" }}>
+              Strict size constraint: every item encoded with this profile will strictly match this size budget regardless of source file size. At <strong>8.5 MB/min</strong>, a 2-hour movie strictly becomes <strong>~1 GB</strong>.
+            </p>
+
+            <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", marginBottom: "0.75rem" }}>
+              <div style={{ flex: "1 1 200px" }}>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="0"
+                  max="100"
+                  className="input"
+                  placeholder="e.g. 8.5"
+                  value={formData.target_mb_per_minute || ""}
+                  onChange={(e) => {
+                    const val = parseFloat(e.target.value) || 0;
+                    handleChange("target_mb_per_minute", val);
+                    if (val > 0) {
+                      handleChange("rate_control_mode", "target_bitrate");
+                    }
+                  }}
+                  style={{ fontWeight: 700, fontSize: "1rem" }}
+                />
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem" }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleChange("target_mb_per_minute", 8.5);
+                    handleChange("resolution_mode", "720p");
+                    handleChange("video_codec", "av1");
+                    handleChange("preferred_audio_codec", "opus");
+                    handleChange("audio_bitrate_kbps", 96);
+                    handleChange("rate_control_mode", "target_bitrate");
+                  }}
+                  className={`btn btn-sm ${formData.target_mb_per_minute === 8.5 ? "btn-primary" : "btn-secondary"}`}
+                  style={{ fontSize: "0.75rem" }}
+                >
+                  🎯 8.5 MB/min (1 GB / 2hr)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleChange("target_mb_per_minute", 12.0)}
+                  className={`btn btn-sm ${formData.target_mb_per_minute === 12.0 ? "btn-primary" : "btn-secondary"}`}
+                  style={{ fontSize: "0.75rem" }}
+                >
+                  12 MB/min (~1.4 GB)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleChange("target_mb_per_minute", 15.0)}
+                  className={`btn btn-sm ${formData.target_mb_per_minute === 15.0 ? "btn-primary" : "btn-secondary"}`}
+                  style={{ fontSize: "0.75rem" }}
+                >
+                  15 MB/min (~1.8 GB)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleChange("target_mb_per_minute", 0)}
+                  className={`btn btn-sm ${formData.target_mb_per_minute === 0 ? "btn-primary" : "btn-secondary"}`}
+                  style={{ fontSize: "0.75rem" }}
+                >
+                  Clear (CRF Mode)
+                </button>
+              </div>
+            </div>
+
+            {formData.target_mb_per_minute > 0 ? (
+              <div style={{ background: "rgba(16, 185, 129, 0.1)", borderRadius: "8px", padding: "0.75rem", border: "1px solid rgba(16, 185, 129, 0.25)", fontSize: "0.78rem" }}>
+                <div style={{ fontWeight: 700, color: "var(--accent-emerald)", marginBottom: "0.3rem", display: "flex", alignItems: "center", gap: "0.4rem" }}>
+                  <Sparkles size={14} />
+                  <span>Dynamic Adaptation Projection:</span>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "0.5rem", color: "var(--text-secondary)" }}>
+                  <div>🎬 2-hr Movie: <strong style={{ color: "var(--text-primary)" }}>{((formData.target_mb_per_minute * 120) / 1024).toFixed(2)} GB</strong> (~{Math.round(formData.target_mb_per_minute * 120)} MB)</div>
+                  <div>📺 45-min Episode: <strong style={{ color: "var(--text-primary)" }}>{Math.round(formData.target_mb_per_minute * 45)} MB</strong></div>
+                  <div>⚡ 24-min Anime/TV: <strong style={{ color: "var(--text-primary)" }}>{Math.round(formData.target_mb_per_minute * 24)} MB</strong></div>
+                  <div>📡 Total Bitrate: <strong style={{ color: "var(--text-primary)" }}>~{Math.round((formData.target_mb_per_minute * 1024 * 1024 * 8) / 60000)} kbps</strong> (Video: ~{Math.max(100, Math.round((formData.target_mb_per_minute * 1024 * 1024 * 8) / 60000) - (formData.audio_bitrate_kbps || 96))}k + Audio: {formData.audio_bitrate_kbps || 96}k)</div>
+                </div>
+              </div>
+            ) : null}
+          </div>
+
           {/* Target File Size Scale-Down Slider */}
           <div className="card" style={{ padding: "1.25rem", marginBottom: "1.25rem", border: "1px solid rgba(168, 85, 247, 0.35)", background: "rgba(168, 85, 247, 0.05)" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                 <Percent size={18} color="var(--accent-purple-light)" />
                 <h3 style={{ fontSize: "0.95rem", fontWeight: 700, color: "var(--accent-purple-light)" }}>
-                  Target File Size Scale-Down
+                  Target File Size Scale-Down (%)
                 </h3>
               </div>
               <span className="badge badge-purple" style={{ fontSize: "0.85rem", fontWeight: 800 }}>
@@ -167,7 +277,7 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
                 }}
               >
                 {formData.scale_down_percent === 0
-                  ? "Off / CRF Quality Mode (No target size scaling)"
+                  ? "Off (Disabled)"
                   : formData.scale_down_percent === 50
                   ? "🎯 Exactly 50% (Half Size of Original File)"
                   : `Target: ~${100 - formData.scale_down_percent}% of original file (${formData.scale_down_percent}% smaller)`}
@@ -225,7 +335,7 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
               </div>
             )}
 
-            {formData.video_codec !== "copy" && formData.scale_down_percent === 0 && (
+            {formData.video_codec !== "copy" && formData.scale_down_percent === 0 && formData.target_mb_per_minute === 0 && (
               <div>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.3rem", fontSize: "0.825rem" }}>
                   <span>Constant Rate Factor (CRF): <strong>{formData.crf}</strong></span>
@@ -242,6 +352,11 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
                   onChange={(e) => handleChange("crf", parseFloat(e.target.value))}
                   style={{ width: "100%", accentColor: "var(--accent-purple-light)" }}
                 />
+              </div>
+            )}
+            {formData.target_mb_per_minute > 0 && (
+              <div style={{ fontSize: "0.78rem", color: "var(--accent-emerald)", marginTop: "0.5rem" }}>
+                ⚡ <strong>Dynamic Rate Control Active:</strong> Video bitrate and frame quantizers will dynamically adapt to strictly meet your <strong>{formData.target_mb_per_minute} MB/min</strong> target.
               </div>
             )}
           </div>

@@ -14,6 +14,17 @@ async def test_seed_presets_includes_youtube(test_session):
     assert yt_profile.scale_down_percent == 50
 
 @pytest.mark.asyncio
+async def test_seed_presets_includes_smart_target_size(test_session):
+    stmt = select(EncodingProfile).where(EncodingProfile.name == "Smart Target Size (8.5 MB/min • 720p AV1 + Opus)")
+    res = await test_session.execute(stmt)
+    smart_profile = res.scalar_one_or_none()
+    assert smart_profile is not None
+    assert smart_profile.video_codec == "av1"
+    assert smart_profile.preferred_audio_codec == "opus"
+    assert smart_profile.target_mb_per_minute == 8.5
+    assert smart_profile.resolution_mode == "720p"
+
+@pytest.mark.asyncio
 async def test_delete_builtin_profile(test_session):
     stmt = select(EncodingProfile).where(EncodingProfile.name == "Maximum Quality")
     profile = (await test_session.execute(stmt)).scalar_one_or_none()

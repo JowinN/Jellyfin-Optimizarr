@@ -227,3 +227,60 @@ def test_ffmpeg_builder_scale_down_half_size():
     # Video target = 4000 - 192 = 3808 kbps
     assert 3700 <= kbps <= 3900
 
+def test_ffmpeg_builder_smart_target_size_4k_downscale():
+    profile = EncodingProfile(
+        name="Smart Target Size (8.5 MB/min • 720p AV1 + Opus)",
+        video_codec="av1",
+        target_mb_per_minute=8.5,
+        resolution_mode="720p",
+        audio_policy="transcode_all",
+        preferred_audio_codec="opus",
+        audio_bitrate_kbps=96,
+        subtitle_policy="copy_all",
+        hwaccel_type="cpu_only",
+    )
+
+    # 4K Movie source (3840x2160), 2 hours (7200 seconds), 15 GB
+    media_info_4k = {
+        "width": 3840,
+        "height": 2160,
+        "size_bytes": 15 * 1024 * 1024 * 1024,
+        "duration_seconds": 7200.0,
+        "streams_detail": {
+            "audio": [{"index": 1, "codec": "dts_hd", "channels": 6}]
+        },
+    }
+
+    cmd = ffmpeg_command_builder.build_command(
+        input_path="/movies/4k_movie.mkv",
+        output_path="/work/out_720p_av1.mkv",
+        profile=profile,
+        media_info=media_info_4k,
+    )
+
+    # 1. 4K must be scaled down to 720p
+    assert "-vf" in cmd
+    vf_val = cmd[cmd.index("-vf") + 1]
+    assert "720" in vf_val
+
+    # 2. Codec is SVT-AV1
+    assert "-c:v" in cmd
+    assert cmd[cmd.index("-c:v") + 1] == "libsvtav1"
+
+    # 3. Audio is Opus @ 96k
+    assert "-c:a:0" in cmd
+    assert cmd[cmd.index("-c:a:0") + 1] == "libopus"
+    assert "-b:a:0" in cmd
+    assert cmd[cmd.index("-b:a:0") + 1] == "96k"
+
+    # 4. Strict 8.5 MB/min rate control:
+    # 8.5 MB/min = 8.5 * 1024 * 1024 * 8 / 60000 = 1188 kbps total
+    # Video target = 1188 - 96 = 1092 kbps
+    assert "-b:v" in cmd
+    bitrate_arg = cmd[cmd.index("-b:v") + 1]
+    assert bitrate_arg.endswith("k")
+    kbps = int(bitrate_arg[:-1])
+    assert 1050 <= kbps <= 1120
+    assert "-maxrate" in cmd
+    assert "-bufsize" in cmd
+

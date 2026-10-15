@@ -114,11 +114,12 @@ class FFmpegCommandBuilder:
         preferred_codec = profile.preferred_audio_codec
         bitrate_k = profile.audio_bitrate_kbps or 192
 
-        # YouTube Preset: strictly uses Opus, YouTube's primary & most space-efficient audio codec
-        if profile.video_codec == "youtube":
-            policy = "transcode_all"
+        # YouTube & AV1 Presets or Opus preferred: strictly uses Opus
+        if profile.video_codec in ("youtube", "av1") or preferred_codec == "opus":
+            if policy == "copy_all" and (profile.video_codec in ("youtube", "av1") or preferred_codec == "opus"):
+                policy = "transcode_all"
             preferred_codec = "opus"
-            bitrate_k = profile.audio_bitrate_kbps or 128
+            bitrate_k = profile.audio_bitrate_kbps or (128 if profile.video_codec == "youtube" else 96)
 
         if policy == "copy_all":
             # Direct stream-copy for all audio streams
@@ -182,13 +183,25 @@ class FFmpegCommandBuilder:
 
         # Resolution scaling - NEVER upscale!
         target_height = self._get_target_height(profile.resolution_mode, profile.max_height)
-        if target_height > 0 and source_height > target_height:
+        target_width = 1280 if target_height == 720 else (1920 if target_height == 1080 else (854 if target_height == 480 else (3840 if target_height == 2160 else 0)))
+
+        needs_downscale = False
+        if target_height > 0:
+            if source_height > target_height or (target_width > 0 and source_width > target_width):
+                needs_downscale = True
+            elif source_height == 0:
+                needs_downscale = True
+
+        if needs_downscale and target_height > 0:
             if use_vaapi:
                 filters.append(f"scale_vaapi=w=-2:h={target_height}")
             elif use_qsv:
                 filters.append(f"scale_qsv=w=-2:h={target_height}")
             else:
-                filters.append(f"scale=-2:{target_height}")
+                if target_width > 0:
+                    filters.append(f"scale='min({target_width},iw)':'min({target_height},ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2")
+                else:
+                    filters.append(f"scale=-2:{target_height}")
 
         # HDR to SDR Tone Mapping if explicitly requested
         if profile.hdr_to_sdr_tonemap and media_info.get("is_hdr"):
@@ -198,14 +211,20 @@ class FFmpegCommandBuilder:
         if filters:
             args.extend(["-vf", ",".join(filters)])
 
-        # Calculate target bitrate from scale_down_percent if specified
-        # E.g. scale_down_percent = 50 -> output will be 50% (half size) of original file
+        # Target Bitrate calculations:
+        # Priority 1: Target MB per minute (e.g. 8.5 MB/min = ~1 GB for 2-hour movie)
+        target_mb_min = getattr(profile, "target_mb_per_minute", 0.0) or 0.0
         scale_down = getattr(profile, "scale_down_percent", 0) or 0
         target_bitrate_kbps = profile.target_bitrate_kbps or 0
         source_size_bytes = media_info.get("size_bytes", 0)
         duration_sec = float(media_info.get("duration_seconds", 0.0))
 
-        if scale_down > 0 and source_size_bytes > 0 and duration_sec > 0:
+        if target_mb_min > 0:
+            # 1 MB = 1024 * 1024 * 8 bits. In 60 seconds:
+            total_target_kbps = int((target_mb_min * 1024 * 1024 * 8) / 60000)
+            audio_kbps = profile.audio_bitrate_kbps or (96 if profile.preferred_audio_codec == "opus" or target_codec in ("youtube", "av1") else 128)
+            target_bitrate_kbps = max(100, total_target_kbps - audio_kbps)
+        elif scale_down > 0 and source_size_bytes > 0 and duration_sec > 0:
             reduction_ratio = min(0.95, max(0.05, scale_down / 100.0))
             target_size_bytes = source_size_bytes * (1.0 - reduction_ratio)
             total_target_kbps = int((target_size_bytes * 8) / (duration_sec * 1000))
@@ -222,7 +241,7 @@ class FFmpegCommandBuilder:
                 encoder = "h264_nvenc"
             args.extend(["-c:v", encoder, "-preset", "p4", "-rc", "vbr"])
             if target_bitrate_kbps > 0:
-                args.extend(["-b:v", f"{target_bitrate_kbps}k", "-maxrate", f"{int(target_bitrate_kbps * 1.3)}k"])
+                args.extend(["-b:v", f"{target_bitrate_kbps}k", "-maxrate", f"{int(target_bitrate_kbps * 1.15)}k", "-bufsize", f"{int(target_bitrate_kbps * 2)}k"])
             else:
                 args.extend(["-cq", str(int(profile.crf))])
             args.extend(["-pix_fmt", "yuv420p"])
@@ -230,7 +249,7 @@ class FFmpegCommandBuilder:
             encoder = "hevc_vaapi" if target_codec in ("hevc", "h265", "youtube", "av1") else "h264_vaapi"
             args.extend(["-c:v", encoder])
             if target_bitrate_kbps > 0:
-                args.extend(["-b:v", f"{target_bitrate_kbps}k", "-maxrate", f"{int(target_bitrate_kbps * 1.3)}k"])
+                args.extend(["-b:v", f"{target_bitrate_kbps}k", "-maxrate", f"{int(target_bitrate_kbps * 1.15)}k"])
             else:
                 qp_val = int(profile.crf + 2)  # VAAPI QP mapping
                 args.extend(["-qp", str(qp_val)])
@@ -246,10 +265,14 @@ class FFmpegCommandBuilder:
             # Software Encoders
             enc_preset = profile.encoder_preset or "medium"
             if target_codec in ("youtube", "av1"):
-                # YouTube preset uses SVT-AV1, YouTube's primary next-gen high-efficiency codec
+                # SVT-AV1 high-efficiency next-generation codec
                 args.extend(["-c:v", "libsvtav1"])
                 if target_bitrate_kbps > 0:
-                    args.extend(["-b:v", f"{target_bitrate_kbps}k", "-maxrate", f"{int(target_bitrate_kbps * 1.3)}k"])
+                    args.extend([
+                        "-b:v", f"{target_bitrate_kbps}k",
+                        "-maxrate", f"{int(target_bitrate_kbps * 1.15)}k",
+                        "-bufsize", f"{int(target_bitrate_kbps * 2)}k",
+                    ])
                 else:
                     args.extend(["-crf", str(int(profile.crf + 4))])
                 svt_preset = enc_preset if enc_preset.isdigit() else "6"

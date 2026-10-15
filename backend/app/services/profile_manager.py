@@ -201,6 +201,26 @@ DEFAULT_PRESETS: List[Dict[str, Any]] = [
         "min_storage_saving_percent": 50.0,
     },
     {
+        "name": "Smart Target Size (8.5 MB/min • 720p AV1 + Opus)",
+        "description": "Strict target size: 8.5 MB/min (~1 GB for 2-hour movie, ~204 MB for 24-min episode). Auto-downscales 4K/1080p to 720p with dynamic AV1 video and Opus audio.",
+        "is_preset": True,
+        "video_codec": "av1",
+        "rate_control_mode": "target_bitrate",
+        "target_mb_per_minute": 8.5,
+        "encoder_preset": "6",
+        "pixel_format": "yuv420p10le",
+        "resolution_mode": "720p",
+        "audio_policy": "transcode_all",
+        "preferred_audio_codec": "opus",
+        "audio_bitrate_kbps": 96,
+        "subtitle_policy": "copy_all",
+        "preserve_hdr": False,
+        "hdr_to_sdr_tonemap": True,
+        "hwaccel_type": "auto",
+        "min_storage_saving_percent": 20.0,
+        "scale_down_percent": 0,
+    },
+    {
         "name": "Custom",
         "description": "Fully adjustable profile template for advanced user configuration.",
         "is_preset": True,
@@ -230,14 +250,15 @@ class ProfileManager:
         res_setting = await session.execute(stmt_setting)
         seeded = res_setting.scalar_one_or_none()
         if seeded and seeded.value == "true":
-            # Check if YouTube Space Saver is seeded (newly added preset)
-            stmt_yt = select(EncodingProfile).where(EncodingProfile.name == "YouTube Space Saver (AV1 + Opus)")
-            res_yt = await session.execute(stmt_yt)
-            if not res_yt.scalar_one_or_none():
-                yt_preset = next((p for p in DEFAULT_PRESETS if p["name"] == "YouTube Space Saver (AV1 + Opus)"), None)
-                if yt_preset:
-                    session.add(EncodingProfile(**yt_preset))
-                    await session.commit()
+            # Check if newly added presets are seeded
+            for target_name in ["YouTube Space Saver (AV1 + Opus)", "Smart Target Size (8.5 MB/min • 720p AV1 + Opus)"]:
+                stmt_check = select(EncodingProfile).where(EncodingProfile.name == target_name)
+                res_check = await session.execute(stmt_check)
+                if not res_check.scalar_one_or_none():
+                    preset_data = next((p for p in DEFAULT_PRESETS if p["name"] == target_name), None)
+                    if preset_data:
+                        session.add(EncodingProfile(**preset_data))
+                        await session.commit()
             return
 
         for preset in DEFAULT_PRESETS:

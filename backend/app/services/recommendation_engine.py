@@ -62,23 +62,44 @@ class RecommendationEngine:
                 is_already_efficient = True
 
         # Savings Projection
-        # If profile has a scale_down_percent slider set, calculate exact percentage
+        # 1. Target MB per minute exact projection
+        target_mb_min = getattr(profile, "target_mb_per_minute", 0.0) or 0.0
         scale_down = getattr(profile, "scale_down_percent", 0) or 0
-        if scale_down > 0:
+
+        if target_mb_min > 0 and item.duration_seconds and item.duration_seconds > 0 and item.size_bytes > 0:
+            target_output_bytes = int((target_mb_min * 1024 * 1024 * (item.duration_seconds / 60.0)))
+            if target_output_bytes < item.size_bytes:
+                estimated_saved_bytes = item.size_bytes - target_output_bytes
+                projected_saving_ratio = estimated_saved_bytes / item.size_bytes
+                estimated_output_bytes = target_output_bytes
+            else:
+                estimated_saved_bytes = 0
+                projected_saving_ratio = 0.0
+                estimated_output_bytes = item.size_bytes
+        elif scale_down > 0:
             projected_saving_ratio = min(0.95, max(0.05, scale_down / 100.0))
+            estimated_saved_bytes = int(item.size_bytes * projected_saving_ratio)
+            estimated_output_bytes = item.size_bytes - estimated_saved_bytes
         elif codec in ("mpeg2video", "vc1", "msmpeg4v3"):
             projected_saving_ratio = 0.65
+            estimated_saved_bytes = int(item.size_bytes * projected_saving_ratio)
+            estimated_output_bytes = item.size_bytes - estimated_saved_bytes
         elif codec in ("h264", "avc"):
             projected_saving_ratio = 0.48
+            estimated_saved_bytes = int(item.size_bytes * projected_saving_ratio)
+            estimated_output_bytes = item.size_bytes - estimated_saved_bytes
         elif codec in ("hevc", "h265") and not is_already_efficient:
             projected_saving_ratio = 0.30
+            estimated_saved_bytes = int(item.size_bytes * projected_saving_ratio)
+            estimated_output_bytes = item.size_bytes - estimated_saved_bytes
         elif codec in ("av1", "youtube") and not is_already_efficient:
             projected_saving_ratio = 0.20
+            estimated_saved_bytes = int(item.size_bytes * projected_saving_ratio)
+            estimated_output_bytes = item.size_bytes - estimated_saved_bytes
         else:
             projected_saving_ratio = 0.25
-
-        estimated_saved_bytes = int(item.size_bytes * projected_saving_ratio)
-        estimated_output_bytes = item.size_bytes - estimated_saved_bytes
+            estimated_saved_bytes = int(item.size_bytes * projected_saving_ratio)
+            estimated_output_bytes = item.size_bytes - estimated_saved_bytes
 
         # Recommendation threshold
         min_thresh = min_mb_per_min_override or self._get_default_threshold(item.library, res)
@@ -91,7 +112,9 @@ class RecommendationEngine:
             reasons.append(f"High storage density: {mb_min:.1f} MB/min (Threshold: {min_thresh:.1f} MB/min).")
         if item.audio_tracks_count > 4:
             reasons.append(f"Contains {item.audio_tracks_count} audio tracks which will all be safely preserved.")
-        if scale_down > 0:
+        if target_mb_min > 0:
+            reasons.append(f"Target size limit: {target_mb_min:.1f} MB/min (Estimated size: {estimated_output_bytes / (1024*1024):.0f} MB).")
+        elif scale_down > 0:
             reasons.append(f"Target size scaling: {scale_down}% scale down (~{round(100 - scale_down)}% output size).")
 
         return {
