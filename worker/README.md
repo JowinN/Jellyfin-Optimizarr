@@ -1,27 +1,27 @@
 # Distributed Transcoding Worker for Jellyfin Media Optimizer
 
-This worker allows your Windows PC (Intel Core i5-4440S + NVIDIA Quadro K620) to act as a high-performance compute node for the Jellyfin Media Optimizer server (`192.168.1.7`).
+This worker allows a secondary Windows PC or desktop (with NVIDIA / Intel / AMD GPU acceleration) to act as a high-performance compute node for your Jellyfin Media Optimizer server.
 
 ---
 
 ## Why use this worker?
 
-| System | CPU | GPU / HW Accel | Encoding Speed |
+| System | Hardware | Encoding Method | Relative Speed |
 | :--- | :--- | :--- | :--- |
-| **Ubuntu Server** (`192.168.1.7`) | 2-core mobile i5-6300U | Intel HD 520 (VAAPI H.264 only) | ~1 fps (0.05x speed) |
-| **Windows PC** (This Machine) | 4-core desktop i5-4440S (AVX2) | Quadro K620 NVENC (`h264_nvenc`) | **~130 - 165 fps (~5x - 7x speed)** |
+| **Media Server (NAS / Mini PC)** | Low-power CPU | Software / Basic VAAPI | ~1x – 2x |
+| **Distributed Worker (Desktop PC)** | Modern CPU + Dedicated GPU | NVENC / QSV / AMF | **~5x – 10x+ (100–180+ FPS)** |
 
-Transcoding on this Windows PC is **up to 100x faster** than the Ubuntu server when using NVIDIA NVENC hardware acceleration!
+Transcoding on a dedicated desktop worker with GPU hardware acceleration offloads heavy compute from your primary media server, keeping playback smooth while rapidly encoding large libraries.
 
 ---
 
 ## How it works
 
-1. **Auto-Registration & Heartbeat**: The worker registers with `http://192.168.1.7:8097/api/nodes/register`. It sends heartbeats every 5 seconds to report telemetry and listen for real-time cancellation commands.
+1. **Auto-Registration & Heartbeat**: The worker registers with `http://<your-server-ip>:8097/api/nodes/register`. It sends heartbeats every 5 seconds to report telemetry and listen for real-time cancellation commands.
 2. **Job Leasing**: The worker polls for pending optimization queue jobs assigned to this node.
 3. **High-Speed LAN Download**: The worker streams the source media file from the server at full network speed (~90-110 MB/s over Gigabit LAN).
 4. **Local Hardware Encoding**: Local `ffmpeg.exe` encodes the video:
-   - GPU Mode: Fast NVIDIA NVENC (`h264_nvenc`) on the Quadro K620.
+   - GPU Mode: Fast Hardware Acceleration (NVIDIA NVENC, Intel QSV, or AMD AMF).
    - CPU Mode: AVX2-optimized `libx265 -preset faster`.
    - Audio: Preserves surround tracks untouched, or transcodes to Opus for YouTube profile.
    - Subtitles, chapters, and metadata are preserved untouched.

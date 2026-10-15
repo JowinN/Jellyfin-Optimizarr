@@ -14,7 +14,7 @@
 [![GPU Accel](https://img.shields.io/badge/Hardware_Accel-NVENC%20%7C%20QSV%20%7C%20VAAPI-76B900?logo=nvidia&logoColor=white)](#hardware-acceleration--distributed-workers)
 [![Mobile Friendly](https://img.shields.io/badge/Mobile-100%25_Responsive-10B981)](#modern-mobile-friendly-dashboard)
 
-[Features](#-key-features) • [Comparison](#-why-jellyfin-optimizarr) • [Quick Start](#-quick-start-in-2-minutes) • [Distributed Workers](#-remote-worker-nodes-gpu-offload) • [Automation](#-automated-scheduling--catch-up) • [Marketing Kit](#-community--launch-kit)
+[Features](#-key-features) • [Comparison](#-why-jellyfin-optimizarr) • [Quick Start](#-quick-start-in-2-minutes) • [Distributed Workers](#-remote-worker-nodes-gpu-offload) • [Automation](#-automated-scheduling--catch-up) • [Contributing](#-contributing)
 
 ---
 
@@ -176,7 +176,7 @@ Want to encode using your gaming desktop or another PC on your local network?
 2. Ensure Python 3.10+ and [FFmpeg](https://ffmpeg.org/download.html) are installed.
 3. Run the worker:
    ```cmd
-   python windows_worker.py --server http://192.168.1.7:8097 --prefer-gpu
+   python windows_worker.py --server http://<your-server-ip>:8097 --prefer-gpu
    ```
 4. **Run as a Windows Background Service**:
    Right-click `install_service.bat` and select **Run as Administrator**. The worker will automatically start on system boot without requiring any user to log in!
@@ -197,16 +197,6 @@ Want to encode using your gaming desktop or another PC on your local network?
 | `BACKUP_RETENTION_DAYS` | `14` | Days to keep reversible backups before auto-pruning. |
 | `NTFY_ENABLED` | `false` | Enable push notifications via ntfy.sh or self-hosted instance. |
 | `TELEGRAM_ENABLED` | `false` | Enable job completion notifications via Telegram Bot. |
-
----
-
-## 📢 Community & Launch Kit
-
-Want to share or announce Jellyfin-Optimizarr to the community? Check out [`COMMUNITY_LAUNCH.md`](COMMUNITY_LAUNCH.md) for ready-to-use launch templates for:
-- **Reddit** (`r/selfhosted`, `r/jellyfin`, `r/homelab`)
-- **Hacker News** (*Show HN*)
-- **X (Twitter)** Announcement Thread
-- **Discord & Lemmy** Community Posts
 
 ---
 
