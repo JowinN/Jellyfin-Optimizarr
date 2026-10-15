@@ -246,6 +246,7 @@ class QueueWorker:
                         "duration_seconds": media_item.duration_seconds,
                         "audio_tracks_count": media_item.audio_tracks_count,
                         "subtitle_tracks_count": media_item.subtitle_tracks_count,
+                        "size_bytes": pre_size,
                     },
                     profile=profile,
                 )
@@ -278,7 +279,7 @@ class QueueWorker:
                 job.stage = "completed"
                 job.completed_at = datetime.utcnow()
                 job.output_size_bytes = os.path.getsize(source_path)
-                job.savings_bytes = max(0, pre_size - job.output_size_bytes)
+                job.savings_bytes = pre_size - job.output_size_bytes
                 job.savings_percent = round((job.savings_bytes / pre_size) * 100, 1) if pre_size > 0 else 0.0
 
                 media_item.size_bytes = job.output_size_bytes

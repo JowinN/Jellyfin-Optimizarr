@@ -66,3 +66,38 @@ async def test_replacement_optimized_copy_mode(test_session):
 
         assert success
         mock_copy.assert_called_once_with("/work/out.mkv", "/movies/sample_copy.optimized.mkv")
+
+@pytest.mark.asyncio
+async def test_replacement_aborts_if_output_larger_than_source(test_session):
+    """Verify that replacement is aborted if optimized size is larger than or equal to pre_encode_size."""
+    item = MediaItem(
+        path="/tv/Phineas and Ferb.mkv",
+        filename="Phineas and Ferb.mkv",
+        library="tv",
+        size_bytes=200000000,
+        mtime=100.0,
+    )
+    test_session.add(item)
+    await test_session.commit()
+
+    with patch("os.path.exists", return_value=True), \
+         patch("os.stat", return_value=MagicMock(st_mtime=100.0, st_size=200000000)), \
+         patch("os.path.getsize", return_value=570000000), \
+         patch("shutil.move") as mock_move, \
+         patch.object(replacement_manager, "check_disk_space", return_value=(True, 50.0)):
+
+        success, msg, backup_path = await replacement_manager.execute_replacement(
+            session=test_session,
+            media_item=item,
+            temp_encoded_path="/work/bloated.mkv",
+            replacement_mode="replace_with_backup",
+            pre_encode_mtime=100.0,
+            pre_encode_size=200000000,
+            job_id=99,
+        )
+
+        assert not success
+        assert "Zero-Bloat Protection" in msg
+        assert ">= original" in msg
+        assert backup_path is None
+        mock_move.assert_not_called()

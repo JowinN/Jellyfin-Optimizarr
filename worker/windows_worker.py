@@ -368,6 +368,10 @@ class WindowsTranscodeWorker:
         target_bitrate = profile.get("target_bitrate_kbps", 0) or 0
         audio_kbps = profile.get("audio_bitrate_kbps", 96) or 96
 
+        source_avg_bitrate_kbps = 0
+        if source_size > 0 and duration_sec > 0:
+            source_avg_bitrate_kbps = int((source_size * 8) / (duration_sec * 1000))
+
         if target_mb_min > 0:
             total_target_kbps = int((target_mb_min * 1024 * 1024 * 8) / 60000)
             target_bitrate = max(100, total_target_kbps - audio_kbps)
@@ -378,6 +382,13 @@ class WindowsTranscodeWorker:
             total_target_kbps = int((target_size_bytes * 8) / (duration_sec * 1000))
             target_bitrate = max(100, total_target_kbps - audio_kbps)
             log(f"Scale-down target active: {scale_down}% (Target size: {target_size_bytes / (1024*1024):.1f} MB, Video Bitrate: {target_bitrate} kbps)", Colors.GREEN)
+
+        # ZERO-BLOAT BITRATE CEILING: Never allow target bitrate to exceed 85% of source bitrate
+        if target_bitrate > 0 and source_avg_bitrate_kbps > 0:
+            safe_ceiling = max(100, int(source_avg_bitrate_kbps * 0.85))
+            if target_bitrate > safe_ceiling:
+                log(f"Source bitrate is low ({source_avg_bitrate_kbps} kbps). Capping target video bitrate from {target_bitrate} kbps to {safe_ceiling} kbps to prevent storage bloat.", Colors.YELLOW)
+                target_bitrate = safe_ceiling
 
         has_nvenc = any(e in self.supported_encoders for e in ["h264_nvenc", "hevc_nvenc", "av1_nvenc"])
         has_mf = "h264_mf" in self.supported_encoders
@@ -439,25 +450,32 @@ class WindowsTranscodeWorker:
                     chosen_encoder = "h264_nvenc"
 
         if chosen_encoder:
-            bitrate_val = target_bitrate or 4500
             desc = "AV1/GPU Target Size" if codec in ("youtube", "av1") else "GPU Acceleration"
-            log(f"Utilizing NVIDIA GPU ({chosen_encoder}) for {desc} @ target {bitrate_val}k!", Colors.GREEN)
             cmd.extend([
                 "-c:v", chosen_encoder,
                 "-preset", "p4",
                 "-rc", "vbr",
-                "-cq", str(int(crf) if crf else 22),
-                "-b:v", f"{bitrate_val}k",
-                "-maxrate", f"{int(bitrate_val * 1.15)}k",
-                "-bufsize", f"{int(bitrate_val * 2)}k",
+                "-cq", str(int(crf) if crf else 24),
                 "-pix_fmt", "yuv420p",
             ])
+            if target_bitrate > 0:
+                log(f"Utilizing NVIDIA GPU ({chosen_encoder}) for {desc} @ target {target_bitrate}k!", Colors.GREEN)
+                cmd.extend([
+                    "-b:v", f"{target_bitrate}k",
+                    "-maxrate", f"{int(target_bitrate * 1.15)}k",
+                    "-bufsize", f"{int(target_bitrate * 2)}k",
+                ])
+            else:
+                log(f"Utilizing NVIDIA GPU ({chosen_encoder}) for {desc} (CQ mode cq={int(crf) if crf else 24})", Colors.GREEN)
+                if source_avg_bitrate_kbps > 0:
+                    cap_rate = max(100, int(source_avg_bitrate_kbps * 0.85))
+                    cmd.extend(["-maxrate", f"{cap_rate}k", "-bufsize", f"{int(cap_rate * 1.5)}k"])
         elif use_gpu and has_mf:
-            bitrate_val = target_bitrate or 4000
-            log(f"Utilizing Media Foundation GPU acceleration (h264_mf) @ {bitrate_val}k!", Colors.GREEN)
+            mf_bitrate = target_bitrate or (int(source_avg_bitrate_kbps * 0.80) if source_avg_bitrate_kbps > 0 else 2500)
+            log(f"Utilizing Media Foundation GPU acceleration (h264_mf) @ {mf_bitrate}k!", Colors.GREEN)
             cmd.extend([
                 "-c:v", "h264_mf",
-                "-b:v", f"{bitrate_val}k",
+                "-b:v", f"{mf_bitrate}k",
                 "-pix_fmt", "yuv420p",
             ])
         elif "av1" in codec or "youtube" in codec:
@@ -659,6 +677,19 @@ class WindowsTranscodeWorker:
             out_size = os.path.getsize(output_local)
             saved_mb = (source_size - out_size) / (1024 * 1024)
             pct_saved = ((source_size - out_size) / source_size) * 100 if source_size > 0 else 0
+
+            # ZERO-BLOAT PROTECTION GUARDRAIL: Block upload if encoded file is larger than source
+            if source_size > 0 and out_size >= source_size:
+                excess_mb = (out_size - source_size) / (1024 * 1024)
+                src_mb = source_size / (1024 * 1024)
+                out_mb = out_size / (1024 * 1024)
+                err_msg = (
+                    f"Zero-Bloat Protection: Encoded output ({out_mb:.1f} MB) is LARGER than original source ({src_mb:.1f} MB) "
+                    f"by +{excess_mb:.1f} MB. Aborted upload to protect server storage."
+                )
+                log(f"[CRITICAL ERROR] {err_msg}", Colors.RED)
+                raise RuntimeError(err_msg)
+
             log(f"Local transcode complete! Output size: {out_size / (1024*1024):.1f} MB (Saved {saved_mb:.1f} MB / {pct_saved:.1f}%)", Colors.GREEN)
 
             # 5. Upload completed file to server for 6-point verification & atomic replacement

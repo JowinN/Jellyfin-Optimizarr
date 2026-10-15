@@ -88,7 +88,21 @@ class ReplacementManager:
 
         optimized_size = os.path.getsize(temp_encoded_path)
 
-        # 4. Replacement Mode: OPTIMIZED COPY
+        # 4. ZERO-BLOAT SAFETY GUARDRAIL: Strict enforcement that optimized file must be smaller than source
+        if pre_encode_size > 0 and optimized_size >= pre_encode_size:
+            opt_mb = optimized_size / (1024 * 1024)
+            pre_mb = pre_encode_size / (1024 * 1024)
+            logger.critical(
+                f"ZERO-BLOAT GUARDRAIL: Encoded file ({opt_mb:.1f} MB) is larger or equal to original source ({pre_mb:.1f} MB). "
+                f"Refusing to replace source media {source_path}."
+            )
+            return (
+                False,
+                f"Zero-Bloat Protection: Encoded output ({opt_mb:.1f} MB) >= original ({pre_mb:.1f} MB). Replacement aborted to protect storage.",
+                None,
+            )
+
+        # 5. Replacement Mode: OPTIMIZED COPY
         if replacement_mode == "optimized_copy":
             root, ext = os.path.splitext(source_path)
             copy_path = f"{root}.optimized{ext}"

@@ -82,11 +82,32 @@ class OutputValidator:
                     f"Subtitle loss in MKV: Source had {src_sub_count} subtitle tracks, output has {out_sub_count}."
                 )
 
+        # 7. ZERO-BLOAT PROTECTION GUARDRAIL (Mandatory Storage Savings Enforcement)
+        src_size = int(source_info.get("size_bytes", 0) or source_info.get("source_size_bytes", 0) or 0)
+        if src_size > 0:
+            if out_size >= src_size:
+                excess_mb = (out_size - src_size) / (1024 * 1024)
+                src_mb = src_size / (1024 * 1024)
+                out_mb = out_size / (1024 * 1024)
+                errors.append(
+                    f"ZERO-BLOAT VIOLATION: Encoded output ({out_mb:.1f} MB) is LARGER than original source ({src_mb:.1f} MB) "
+                    f"by +{excess_mb:.1f} MB. Optimization rejected to prevent storage bloat."
+                )
+            else:
+                min_saving_pct = float(getattr(profile, "min_storage_saving_percent", 0.0) or 0.0)
+                if min_saving_pct > 0:
+                    actual_saving_pct = ((src_size - out_size) / src_size) * 100.0
+                    if actual_saving_pct < min_saving_pct:
+                        errors.append(
+                            f"INSUFFICIENT SAVINGS: Saved {actual_saving_pct:.1f}%, which is below "
+                            f"profile minimum requirement of {min_saving_pct:.1f}% for '{profile.name}'."
+                        )
+
         is_valid = len(errors) == 0
         if not is_valid:
             logger.error(f"Validation failed for {output_path}: {'; '.join(errors)}")
         else:
-            logger.info(f"Validation passed successfully for {output_path}. Duration={out_duration:.1f}s, AudioTracks={out_audio_count}")
+            logger.info(f"Validation passed successfully for {output_path}. Duration={out_duration:.1f}s, AudioTracks={out_audio_count}, Size={out_size / (1024*1024):.1f}MB")
 
         return is_valid, errors
 

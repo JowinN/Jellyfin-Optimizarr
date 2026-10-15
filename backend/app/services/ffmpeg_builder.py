@@ -231,6 +231,17 @@ class FFmpegCommandBuilder:
             audio_kbps = profile.audio_bitrate_kbps or (128 if target_codec == "youtube" else 192)
             target_bitrate_kbps = max(100, total_target_kbps - audio_kbps)
 
+        source_avg_bitrate_kbps = 0
+        if source_size_bytes > 0 and duration_sec > 0:
+            source_avg_bitrate_kbps = int((source_size_bytes * 8) / (duration_sec * 1000))
+
+        # ZERO-BLOAT BITRATE CEILING: Target bitrate must never exceed 85% of source bitrate
+        if target_bitrate_kbps > 0 and source_avg_bitrate_kbps > 0:
+            safe_ceiling = max(100, int(source_avg_bitrate_kbps * 0.85))
+            if target_bitrate_kbps > safe_ceiling:
+                logger.info(f"Capping target bitrate from {target_bitrate_kbps} kbps to {safe_ceiling} kbps based on source bitrate ({source_avg_bitrate_kbps} kbps)")
+                target_bitrate_kbps = safe_ceiling
+
         # Codec Selection & Hardware Specifics
         if use_cuda:
             if target_codec in ("hevc", "h265"):
@@ -244,6 +255,9 @@ class FFmpegCommandBuilder:
                 args.extend(["-b:v", f"{target_bitrate_kbps}k", "-maxrate", f"{int(target_bitrate_kbps * 1.15)}k", "-bufsize", f"{int(target_bitrate_kbps * 2)}k"])
             else:
                 args.extend(["-cq", str(int(profile.crf))])
+                if source_avg_bitrate_kbps > 0:
+                    cap_rate = max(100, int(source_avg_bitrate_kbps * 0.85))
+                    args.extend(["-maxrate", f"{cap_rate}k", "-bufsize", f"{int(cap_rate * 1.5)}k"])
             args.extend(["-pix_fmt", "yuv420p"])
         elif use_vaapi:
             encoder = "hevc_vaapi" if target_codec in ("hevc", "h265", "youtube", "av1") else "h264_vaapi"

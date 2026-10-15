@@ -104,6 +104,14 @@ class AutomationService:
             if not rule.is_active:
                 continue
 
+            # ZERO-BLOAT SMART GUARD: If item already meets or exceeds target size constraint, skip it!
+            target_mb_min = getattr(profile, "target_mb_per_minute", 0.0) or 0.0
+            if target_mb_min > 0 and item.duration_seconds and item.duration_seconds > 0 and item.size_bytes > 0:
+                target_size_bytes = int(target_mb_min * 1024 * 1024 * (item.duration_seconds / 60.0))
+                if item.size_bytes <= target_size_bytes:
+                    completed_count += 1
+                    continue
+
             # Check if this item is unoptimized or failed and needs queueing
             if item.optimization_status in ("unoptimized", "failed"):
                 # Ensure no pending/running job exists for this media item
@@ -206,6 +214,16 @@ class AutomationService:
                 matched = (media_item.series_name and media_item.series_name.lower() == rule.target_series_name.lower())
 
             if matched:
+                stmt_prof = select(EncodingProfile).where(EncodingProfile.id == rule.profile_id)
+                profile = (await session.execute(stmt_prof)).scalar_one_or_none()
+                if profile:
+                    target_mb_min = getattr(profile, "target_mb_per_minute", 0.0) or 0.0
+                    if target_mb_min > 0 and media_item.duration_seconds and media_item.duration_seconds > 0 and media_item.size_bytes > 0:
+                        target_size_bytes = int(target_mb_min * 1024 * 1024 * (media_item.duration_seconds / 60.0))
+                        if media_item.size_bytes <= target_size_bytes:
+                            logger.info(f"Skipping auto-enqueue for {media_item.filename}: already smaller than rule target size ({media_item.size_bytes / (1024*1024):.1f} MB <= {target_size_bytes / (1024*1024):.1f} MB)")
+                            continue
+
                 assigned_name = rule.assigned_node_name
                 if not assigned_name and rule.assigned_node_id:
                     if rule.assigned_node_id == "windows-node":

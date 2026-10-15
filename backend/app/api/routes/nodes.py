@@ -222,6 +222,8 @@ async def poll_job_for_node(
                 "name": profile.name,
                 "video_codec": profile.video_codec,
                 "scale_down_percent": getattr(profile, "scale_down_percent", 0) or 0,
+                "target_mb_per_minute": getattr(profile, "target_mb_per_minute", 0.0) or 0.0,
+                "min_storage_saving_percent": getattr(profile, "min_storage_saving_percent", 0.0) or 0.0,
                 "target_bitrate_kbps": profile.target_bitrate_kbps,
                 "crf": profile.crf,
                 "encoder_preset": profile.encoder_preset,
@@ -317,27 +319,33 @@ async def upload_job_output(
             shutil.copyfileobj(file.file, buffer)
 
         # Run 6-point output validator
+        pre_size = media_item.size_bytes
+        pre_mtime = media_item.mtime
+
         is_valid, validation_errors = await output_validator.validate(
             output_path=target_work_file,
             source_info={
                 "duration_seconds": media_item.duration_seconds,
                 "audio_tracks_count": media_item.audio_tracks_count,
                 "subtitle_tracks_count": media_item.subtitle_tracks_count,
+                "size_bytes": pre_size,
             },
             profile=profile,
         )
 
         if not is_valid:
             error_msg = "; ".join(validation_errors)
+            if os.path.exists(target_work_file):
+                try:
+                    os.remove(target_work_file)
+                except OSError:
+                    pass
             raise RuntimeError(f"Output validation failed: {error_msg}")
 
         # Execute safe atomic replacement
         job.stage = "replacing"
         await session.commit()
         await event_broadcaster.broadcast("job_status", {"id": job.id, "stage": "replacing"})
-
-        pre_size = media_item.size_bytes
-        pre_mtime = media_item.mtime
 
         replace_ok, replace_msg, backup_path = await replacement_manager.execute_replacement(
             session=session,
@@ -350,6 +358,11 @@ async def upload_job_output(
         )
 
         if not replace_ok:
+            if os.path.exists(target_work_file):
+                try:
+                    os.remove(target_work_file)
+                except OSError:
+                    pass
             raise RuntimeError(f"Replacement failed: {replace_msg}")
 
         # Finalize job completion
@@ -358,7 +371,7 @@ async def upload_job_output(
         job.stage = "completed"
         job.completed_at = datetime.utcnow()
         job.output_size_bytes = os.path.getsize(media_item.path)
-        job.savings_bytes = max(0, pre_size - job.output_size_bytes)
+        job.savings_bytes = pre_size - job.output_size_bytes
         job.savings_percent = round((job.savings_bytes / pre_size) * 100, 1) if pre_size > 0 else 0.0
 
         media_item.size_bytes = job.output_size_bytes
