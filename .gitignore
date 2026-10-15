@@ -1,0 +1,35 @@
+# Git ignore
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.env
+.venv
+env/
+venv/
+ENV/
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+node_modules/
+frontend/dist/
+frontend/node_modules/
+data/
+db/
+*.db
+*.sqlite3
+work/
+backups/
+logs/
+.DS_Store
+Thumbs.db
+
+# Worker node local scratch & binaries
+worker/bin/
+worker/temp/
+worker/worker.log
+worker/*.txt
+worker/__pycache__/

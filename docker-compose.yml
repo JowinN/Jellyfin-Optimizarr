@@ -1,0 +1,65 @@
+services:
+  media-optimizer:
+    container_name: jellyfin-media-optimizer
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: jellyfin-media-optimizer:latest
+    restart: unless-stopped
+
+    # Optional hardware acceleration for Intel Quick Sync & VAAPI
+    devices:
+      - /dev/dri:/dev/dri
+
+    environment:
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - TZ=${TZ:-Asia/Kolkata}
+      - JELLYFIN_URL=${JELLYFIN_URL:-http://jellyfin:8096}
+      - JELLYFIN_API_KEY=${JELLYFIN_API_KEY:-}
+      - SECRET_KEY=${SECRET_KEY:-default_insecure_key_change_me_immediately}
+      - PORT=8080
+      - HWACCEL_MODE=${HWACCEL_MODE:-auto}
+      - HWACCEL_FALLBACK_CPU=${HWACCEL_FALLBACK_CPU:-true}
+      - MIN_FREE_SPACE_GB=${MIN_FREE_SPACE_GB:-15}
+      - MAX_CONCURRENT_ENCODES=${MAX_CONCURRENT_ENCODES:-1}
+
+    ports:
+      - "${PORT:-8097}:8080"
+
+    volumes:
+      # Application Configuration & Database
+      - ${CONFIG_DIR:-/data/media/config/media-optimizer}:/app/config
+      - ${DATA_DIR:-/data/media/config/media-optimizer/db}:/app/data
+      # Temporary Encoding Workspace
+      - ${WORK_DIR:-/data/media/optimizer-work}:/work
+      # Reversible Backups Directory
+      - ${BACKUP_DIR:-/data/media/optimizer-backups}:/backups
+      # Media Libraries (matches Jellyfin container mounts)
+      - ${MOVIES_DIR:-/data/media/movies}:/movies
+      - ${TV_DIR:-/data/media/tv}:/tv
+      - ${ANIME_DIR:-/data/media/anime}:/anime
+
+    networks:
+      - apps
+
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://127.0.0.1:8080/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+    security_opt:
+      - no-new-privileges:true
+
+    # Bounded resource constraints to ensure coexistence with Jellyfin
+    deploy:
+      resources:
+        limits:
+          memory: 4096M
+
+networks:
+  apps:
+    external: true
+    name: apps
