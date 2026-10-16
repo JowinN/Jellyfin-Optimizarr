@@ -353,62 +353,62 @@ export const AutomationPage: React.FC<AutomationPageProps> = ({
 
       {/* KPI Overview Cards */}
       <div className="grid-kpi">
-        <div className="card">
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
-            <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)", fontWeight: 600, textTransform: "uppercase" }}>
-              Active Rules
-            </span>
-            <CalendarClock size={16} color="var(--accent-purple-light)" />
+        <div className="card kpi-card">
+          <div>
+            <div className="kpi-card-header">
+              <span className="kpi-card-title">Active Rules</span>
+              <CalendarClock size={18} color="var(--accent-purple-light)" />
+            </div>
+            <div className="kpi-card-value">
+              {activeCount} <span style={{ fontSize: "1rem", color: "var(--text-muted)", fontWeight: 500 }}>/ {rules.length} total</span>
+            </div>
           </div>
-          <div className="kpi-value" style={{ fontSize: "1.75rem", fontWeight: 800, color: "var(--text-primary)" }}>
-            {activeCount} <span style={{ fontSize: "0.9rem", color: "var(--text-muted)", fontWeight: 500 }}>/ {rules.length} total</span>
-          </div>
-          <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: "0.25rem" }}>
+          <div className="kpi-card-footer">
             Runs every 60s & on library scans
           </div>
         </div>
 
-        <div className="card">
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
-            <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)", fontWeight: 600, textTransform: "uppercase" }}>
-              Target Media in Scope
-            </span>
-            <Layers size={16} color="var(--accent-cyan)" />
+        <div className="card kpi-card">
+          <div>
+            <div className="kpi-card-header">
+              <span className="kpi-card-title">Target Media in Scope</span>
+              <Layers size={18} color="var(--accent-cyan)" />
+            </div>
+            <div className="kpi-card-value" style={{ color: "var(--accent-cyan)" }}>
+              {totalMatched}
+            </div>
           </div>
-          <div className="kpi-value" style={{ fontSize: "1.75rem", fontWeight: 800, color: "var(--accent-cyan)" }}>
-            {totalMatched}
-          </div>
-          <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: "0.25rem" }}>
+          <div className="kpi-card-footer">
             Items covered across all rules
           </div>
         </div>
 
-        <div className="card">
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
-            <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)", fontWeight: 600, textTransform: "uppercase" }}>
-              Auto-Queued Jobs
-            </span>
-            <Zap size={16} color="var(--accent-amber)" />
+        <div className="card kpi-card">
+          <div>
+            <div className="kpi-card-header">
+              <span className="kpi-card-title">Auto-Queued Jobs</span>
+              <Zap size={18} color="var(--accent-amber)" />
+            </div>
+            <div className="kpi-card-value" style={{ color: "var(--accent-amber)" }}>
+              {totalQueued}
+            </div>
           </div>
-          <div className="kpi-value" style={{ fontSize: "1.75rem", fontWeight: 800, color: "var(--accent-amber)" }}>
-            {totalQueued}
-          </div>
-          <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: "0.25rem" }}>
+          <div className="kpi-card-footer">
             Sent to encoding worker nodes
           </div>
         </div>
 
-        <div className="card">
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.5rem" }}>
-            <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)", fontWeight: 600, textTransform: "uppercase" }}>
-              Encoded & Optimized
-            </span>
-            <CheckCircle2 size={16} color="var(--accent-emerald)" />
+        <div className="card kpi-card">
+          <div>
+            <div className="kpi-card-header">
+              <span className="kpi-card-title">Encoded & Optimized</span>
+              <CheckCircle2 size={18} color="var(--accent-emerald)" />
+            </div>
+            <div className="kpi-card-value" style={{ color: "var(--accent-emerald)" }}>
+              {totalCompleted}
+            </div>
           </div>
-          <div className="kpi-value" style={{ fontSize: "1.75rem", fontWeight: 800, color: "var(--accent-emerald)" }}>
-            {totalCompleted}
-          </div>
-          <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: "0.25rem" }}>
+          <div className="kpi-card-footer">
             Completed successfully
           </div>
         </div>

@@ -9,10 +9,12 @@ import {
   BarChart3,
   Settings as SettingsIcon,
   LogOut,
-  Radio,
   HardDrive,
   CalendarClock,
   X,
+  Radio,
+  Server,
+  Zap,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useSSE } from "../context/SSEContext";
@@ -22,27 +24,59 @@ interface NavbarProps {
   onSelectTab: (tab: string) => void;
   isOpen?: boolean;
   onClose?: () => void;
+  activeQueueCount?: number;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ currentTab, onSelectTab, isOpen = false, onClose }) => {
+export const Navbar: React.FC<NavbarProps> = ({
+  currentTab,
+  onSelectTab,
+  isOpen = false,
+  onClose,
+  activeQueueCount = 0,
+}) => {
   const { user, logout } = useAuth();
   const { isConnected, scanProgress } = useSSE();
 
-  const navItems = [
-    { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-    { id: "media", label: "Media Browser", icon: Film },
-    { id: "recommendations", label: "Smart Savings", icon: Sparkles },
-    { id: "queue", label: "Queue", icon: ListOrdered },
-    { id: "automation", label: "Automation", icon: CalendarClock },
-    { id: "profiles", label: "Profiles", icon: Sliders },
-    { id: "rollback", label: "Rollback & Backups", icon: History },
-    { id: "analytics", label: "Analytics", icon: BarChart3 },
-    { id: "settings", label: "Settings", icon: SettingsIcon },
+  const navSections = [
+    {
+      title: "OPERATIONS",
+      items: [
+        { id: "dashboard", label: "Overview", icon: LayoutDashboard },
+        {
+          id: "queue",
+          label: "Queue & Fleet",
+          icon: ListOrdered,
+          badge: activeQueueCount > 0 ? activeQueueCount : undefined,
+        },
+      ],
+    },
+    {
+      title: "MEDIA INTELLIGENCE",
+      items: [
+        { id: "media", label: "Media Library", icon: Film },
+        { id: "recommendations", label: "Smart Savings", icon: Sparkles },
+      ],
+    },
+    {
+      title: "AUTOMATION & CODECS",
+      items: [
+        { id: "automation", label: "Automation Rules", icon: CalendarClock },
+        { id: "profiles", label: "Encoding Presets", icon: Sliders },
+        { id: "rollback", label: "Backups & Safety", icon: History },
+      ],
+    },
+    {
+      title: "SYSTEM",
+      items: [
+        { id: "analytics", label: "Analytics", icon: BarChart3 },
+        { id: "settings", label: "Settings", icon: SettingsIcon },
+      ],
+    },
   ];
 
   return (
     <>
-      {/* Mobile Drawer Overlay Backdrop */}
+      {/* Mobile Drawer Backdrop */}
       <div
         className={`sidebar-backdrop ${isOpen ? "open" : ""}`}
         onClick={onClose}
@@ -51,31 +85,60 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, onSelectTab, isOpen 
 
       <aside className={`sidebar ${isOpen ? "open" : ""}`}>
         {/* Brand Header */}
-        <div style={{ padding: "1.25rem 1.5rem", borderBottom: "1px solid var(--border-color)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div
+          style={{
+            padding: "1.25rem 1.35rem",
+            borderBottom: "1px solid var(--border-color)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
           <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-            <div style={{
-              width: "36px",
-              height: "36px",
-              borderRadius: "10px",
-              background: "var(--gradient-brand)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              boxShadow: "0 0 15px rgba(168, 85, 247, 0.4)",
-              flexShrink: 0,
-            }}>
-              <HardDrive size={20} color="#fff" />
+            <div
+              style={{
+                width: "38px",
+                height: "38px",
+                borderRadius: "10px",
+                background: "var(--gradient-brand)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                boxShadow: "0 0 16px rgba(139, 92, 246, 0.45)",
+                flexShrink: 0,
+              }}
+            >
+              <Zap size={20} color="#fff" />
             </div>
-            <div className="logo-text">
-              <div style={{ fontWeight: 700, fontSize: "1rem", letterSpacing: "-0.02em" }}>Jellyfin Optimizer</div>
-              <div style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>v1.0 Production</div>
+            <div>
+              <div
+                style={{
+                  fontWeight: 800,
+                  fontSize: "1.02rem",
+                  letterSpacing: "-0.025em",
+                  color: "#fff",
+                  lineHeight: 1.2,
+                }}
+              >
+                Optimizarr
+              </div>
+              <div
+                style={{
+                  fontSize: "0.68rem",
+                  color: "var(--text-muted)",
+                  fontWeight: 500,
+                  letterSpacing: "0.02em",
+                }}
+              >
+                Media Engine v1.0
+              </div>
             </div>
           </div>
+
           {onClose && (
             <button
               onClick={onClose}
-              className="btn btn-secondary btn-sm mobile-only"
-              style={{ padding: "0.4rem", borderRadius: "8px" }}
+              className="btn btn-secondary btn-icon mobile-only"
               aria-label="Close menu"
             >
               <X size={18} />
@@ -83,84 +146,138 @@ export const Navbar: React.FC<NavbarProps> = ({ currentTab, onSelectTab, isOpen 
           )}
         </div>
 
-      {/* SSE Connection & Scan Pill */}
-      <div style={{ padding: "0.75rem 1.25rem", borderBottom: "1px solid var(--border-color)", display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: "0.75rem" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-          <span style={{
-            width: "8px",
-            height: "8px",
-            borderRadius: "50%",
-            backgroundColor: isConnected ? "var(--accent-emerald)" : "var(--accent-rose)",
-            display: "inline-block",
-            boxShadow: isConnected ? "0 0 8px var(--accent-emerald)" : "none",
-          }} />
-          <span style={{ color: "var(--text-secondary)" }}>{isConnected ? "Live Sync" : "Connecting"}</span>
-        </div>
-        {scanProgress.is_scanning && (
-          <span className="badge badge-purple" style={{ fontSize: "0.65rem" }}>
-            Scanning...
-          </span>
-        )}
-      </div>
+        {/* Live Cluster Sync Status Pill */}
+        <div
+          style={{
+            padding: "0.65rem 1.25rem",
+            borderBottom: "1px solid var(--border-color)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            fontSize: "0.74rem",
+            background: "rgba(15, 23, 42, 0.4)",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "0.55rem" }}>
+            <span className="pulse-radar">
+              <span
+                className="pulse-radar-dot"
+                style={{
+                  backgroundColor: isConnected ? "var(--accent-emerald)" : "var(--accent-rose)",
+                }}
+              />
+              {isConnected && <span className="pulse-radar-ring" />}
+            </span>
+            <span style={{ color: "var(--text-secondary)", fontWeight: 500 }}>
+              {isConnected ? "Cluster Connected" : "Connecting..."}
+            </span>
+          </div>
 
-      {/* Navigation Links */}
-      <nav style={{ padding: "1rem 0.75rem", display: "flex", flexDirection: "column", gap: "0.25rem", flex: 1 }}>
-        {navItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = currentTab === item.id;
-          return (
-            <button
-              key={item.id}
-              onClick={() => {
-                onSelectTab(item.id);
-                onClose?.();
-              }}
+          {scanProgress.is_scanning ? (
+            <span
+              className="badge badge-purple"
+              style={{ fontSize: "0.65rem", padding: "0.15rem 0.5rem" }}
+            >
+              Scanning...
+            </span>
+          ) : (
+            <span style={{ fontSize: "0.68rem", color: "var(--text-muted)" }}>Ready</span>
+          )}
+        </div>
+
+        {/* Grouped Navigation Links */}
+        <nav className="sidebar-nav-container">
+          {navSections.map((sec) => (
+            <div key={sec.title} style={{ marginBottom: "0.4rem" }}>
+              <div className="nav-section-title">{sec.title}</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.15rem" }}>
+                {sec.items.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = currentTab === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => {
+                        onSelectTab(item.id);
+                        onClose?.();
+                      }}
+                      className={`nav-link-btn ${isActive ? "active" : ""}`}
+                    >
+                      <div className="nav-link-content">
+                        <Icon
+                          size={18}
+                          color={isActive ? "var(--accent-purple-light)" : "var(--text-secondary)"}
+                        />
+                        <span>{item.label}</span>
+                      </div>
+                      {item.badge !== undefined && (
+                        <span className="nav-badge-pill">{item.badge}</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </nav>
+
+        {/* User Operator Footer */}
+        <div
+          style={{
+            padding: "0.95rem 1.25rem",
+            borderTop: "1px solid var(--border-color)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            background: "rgba(10, 15, 26, 0.6)",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "0.65rem", minWidth: 0 }}>
+            <div
               style={{
+                width: "32px",
+                height: "32px",
+                borderRadius: "50%",
+                background: "linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)",
                 display: "flex",
                 alignItems: "center",
-                gap: "0.75rem",
-                padding: "0.65rem 0.85rem",
-                borderRadius: "var(--radius-md)",
-                border: "none",
-                background: isActive ? "rgba(168, 85, 247, 0.15)" : "transparent",
-                color: isActive ? "#c084fc" : "var(--text-secondary)",
-                fontWeight: isActive ? 600 : 500,
-                fontSize: "0.875rem",
-                cursor: "pointer",
-                textAlign: "left",
-                transition: "all 0.15s ease",
-                borderLeft: isActive ? "3px solid #a855f7" : "3px solid transparent",
-              }}
-              onMouseEnter={(e) => {
-                if (!isActive) e.currentTarget.style.background = "rgba(255, 255, 255, 0.04)";
-              }}
-              onMouseLeave={(e) => {
-                if (!isActive) e.currentTarget.style.background = "transparent";
+                justifyContent: "center",
+                fontWeight: 700,
+                fontSize: "0.82rem",
+                color: "#fff",
+                flexShrink: 0,
               }}
             >
-              <Icon size={18} />
-              <span className="nav-text">{item.label}</span>
-            </button>
-          );
-        })}
-      </nav>
+              {(user?.username || "A").slice(0, 1).toUpperCase()}
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <div
+                style={{
+                  fontSize: "0.825rem",
+                  fontWeight: 600,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {user?.username || "Admin"}
+              </div>
+              <div style={{ fontSize: "0.68rem", color: "var(--text-muted)" }}>
+                Server Operator
+              </div>
+            </div>
+          </div>
 
-      {/* User Footer */}
-      <div style={{ padding: "1rem 1.25rem", borderTop: "1px solid var(--border-color)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div className="logo-text" style={{ overflow: "hidden" }}>
-          <div style={{ fontSize: "0.825rem", fontWeight: 600 }}>{user?.username || "Admin"}</div>
-          <div style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>Server Operator</div>
+          <button
+            onClick={logout}
+            title="Sign out"
+            className="btn btn-secondary btn-icon"
+            style={{ borderRadius: "8px" }}
+          >
+            <LogOut size={16} />
+          </button>
         </div>
-        <button
-          onClick={logout}
-          title="Sign out"
-          className="btn btn-secondary btn-sm"
-          style={{ padding: "0.4rem" }}
-        >
-          <LogOut size={16} />
-        </button>
-      </div>
-    </aside>
+      </aside>
     </>
   );
 };

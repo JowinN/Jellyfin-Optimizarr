@@ -1,5 +1,22 @@
 import React, { useState, useEffect } from "react";
-import { Search, Filter, Play, Eye, CheckSquare, Square, RefreshCw, Trash2, FolderSync } from "lucide-react";
+import {
+  Search,
+  Filter,
+  Play,
+  Eye,
+  CheckSquare,
+  Square,
+  RefreshCw,
+  Trash2,
+  FolderSync,
+  Film,
+  Tv,
+  Layers,
+  Sparkles,
+  Sliders,
+  X,
+  ArrowUpDown,
+} from "lucide-react";
 import { MediaItem, EncodingProfile } from "../types";
 import { api } from "../api";
 
@@ -27,6 +44,7 @@ export const MediaBrowser: React.FC<MediaBrowserProps> = ({
   const [resolution, setResolution] = useState("");
   const [status, setStatus] = useState("");
   const [sortBy, setSortBy] = useState("mb_per_minute");
+  const [sortDesc, setSortDesc] = useState(true);
 
   // Selection
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
@@ -43,7 +61,7 @@ export const MediaBrowser: React.FC<MediaBrowserProps> = ({
         resolution: resolution || undefined,
         optimization_status: status || undefined,
         sort_by: sortBy,
-        sort_desc: true,
+        sort_desc: sortDesc,
         page,
         page_size: pageSize,
       });
@@ -58,13 +76,28 @@ export const MediaBrowser: React.FC<MediaBrowserProps> = ({
 
   useEffect(() => {
     fetchMedia();
-  }, [page, library, videoCodec, resolution, status, sortBy]);
+  }, [page, library, videoCodec, resolution, status, sortBy, sortDesc]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setPage(1);
     fetchMedia();
   };
+
+  const handleClearFilters = () => {
+    setSearch("");
+    setLibrary("");
+    setVideoCodec("");
+    setResolution("");
+    setStatus("");
+    setSortBy("mb_per_minute");
+    setSortDesc(true);
+    setPage(1);
+  };
+
+  const hasActiveFilters = Boolean(
+    search || library || videoCodec || resolution || status || sortBy !== "mb_per_minute"
+  );
 
   const toggleSelect = (id: number) => {
     setSelectedIds((prev) =>
@@ -87,7 +120,7 @@ export const MediaBrowser: React.FC<MediaBrowserProps> = ({
       await api.enqueueBatch({
         media_item_ids: selectedIds,
         profile_id: batchProfileId,
-        replacement_mode: "replace_with_backup",
+        replacement_mode: "safe_backup",
       });
       alert(`Queued ${selectedIds.length} media items for optimization!`);
       setSelectedIds([]);
@@ -102,7 +135,7 @@ export const MediaBrowser: React.FC<MediaBrowserProps> = ({
   const handlePruneMissing = async () => {
     try {
       const res = await api.pruneMedia();
-      alert(`Pruned ${res.pruned_count} missing media files from library database.`);
+      alert(`Pruned ${res.pruned_count} missing media records from database.`);
       fetchMedia();
     } catch (e: any) {
       alert("Error pruning missing files: " + e.message);
@@ -112,7 +145,7 @@ export const MediaBrowser: React.FC<MediaBrowserProps> = ({
   const handleRescan = async () => {
     try {
       await api.triggerScan({ force_rescan: false });
-      alert("Library scan started in background. Missing/deleted files will be pruned automatically.");
+      alert("Library scan started in background. New files and storage changes will sync automatically.");
       setTimeout(fetchMedia, 3000);
     } catch (e: any) {
       alert("Error starting scan: " + e.message);
@@ -126,55 +159,150 @@ export const MediaBrowser: React.FC<MediaBrowserProps> = ({
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
+  const totalPages = Math.ceil(total / pageSize) || 1;
+
+  const libraryTabs = [
+    { id: "", label: "All Media", icon: Layers },
+    { id: "movies", label: "Movies", icon: Film },
+    { id: "tv", label: "TV Shows", icon: Tv },
+    { id: "anime", label: "Anime", icon: Sparkles },
+  ];
+
   return (
     <div>
-      {/* Responsive Page Header */}
+      {/* Page Header */}
       <div className="page-header">
         <div>
-          <h1 className="page-title">Media Browser</h1>
+          <h1 className="page-title">Media Library Browser</h1>
           <p className="page-subtitle">
-            Explore technical stream metadata, audio channels, and storage efficiency
+            Inspect stream bitrates, codec profiles, video resolutions, and identify high-payoff compression targets
           </p>
         </div>
         <div className="page-actions">
-          <button onClick={handlePruneMissing} className="btn btn-secondary btn-sm" title="Remove records for files no longer on disk">
-            <Trash2 size={16} /> Prune Missing
+          <button
+            onClick={handlePruneMissing}
+            className="btn btn-secondary btn-sm"
+            title="Clean database records for deleted files"
+          >
+            <Trash2 size={15} /> Prune Missing
           </button>
-          <button onClick={handleRescan} className="btn btn-secondary btn-sm" title="Scan libraries for new, changed or removed files">
-            <FolderSync size={16} /> Rescan Libraries
+          <button
+            onClick={handleRescan}
+            className="btn btn-secondary btn-sm"
+            title="Scan file storage for changes"
+          >
+            <FolderSync size={15} /> Rescan Storage
           </button>
           <button onClick={fetchMedia} className="btn btn-secondary btn-sm">
-            <RefreshCw size={16} className={isLoading ? "animate-spin" : ""} /> Refresh
+            <RefreshCw size={15} className={isLoading ? "spin" : ""} /> Refresh
           </button>
         </div>
       </div>
 
-      {/* Filter Bar */}
-      <div className="card" style={{ marginBottom: "1.5rem", padding: "1.25rem" }}>
-        <form onSubmit={handleSearchSubmit} style={{ display: "flex", gap: "0.75rem", marginBottom: "1rem", flexWrap: "wrap" }}>
-          <div style={{ position: "relative", flex: "1 1 200px" }}>
+      {/* Library Pill Switcher */}
+      <div className="segmented-tabs" style={{ marginBottom: "1rem" }}>
+        {libraryTabs.map((tab) => {
+          const Icon = tab.icon;
+          const isActive = library === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => {
+                setLibrary(tab.id);
+                setPage(1);
+              }}
+              className={`segmented-tab ${isActive ? "active" : ""}`}
+            >
+              <Icon size={15} color={isActive ? "var(--accent-purple-light)" : "var(--text-secondary)"} />
+              <span>{tab.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Filter & Search Bar */}
+      <div className="card" style={{ marginBottom: "1.5rem", padding: "1.15rem 1.25rem" }}>
+        <form
+          onSubmit={handleSearchSubmit}
+          style={{
+            display: "flex",
+            gap: "0.75rem",
+            marginBottom: "0.85rem",
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ position: "relative", flex: "1 1 240px" }}>
             <input
               type="text"
-              placeholder="Search filename, title, or series..."
+              placeholder="Search filename, movie title, or series..."
               className="input"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              style={{ paddingLeft: "2.25rem" }}
+              style={{ paddingLeft: "2.35rem" }}
             />
-            <Search size={16} color="var(--text-muted)" style={{ position: "absolute", left: "0.75rem", top: "50%", transform: "translateY(-50%)" }} />
+            <Search
+              size={16}
+              color="var(--text-muted)"
+              style={{
+                position: "absolute",
+                left: "0.85rem",
+                top: "50%",
+                transform: "translateY(-50%)",
+              }}
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearch("");
+                  setPage(1);
+                }}
+                style={{
+                  position: "absolute",
+                  right: "0.75rem",
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  background: "none",
+                  border: "none",
+                  color: "var(--text-muted)",
+                  cursor: "pointer",
+                }}
+              >
+                <X size={15} />
+              </button>
+            )}
           </div>
-          <button type="submit" className="btn btn-secondary" style={{ flexShrink: 0 }}>Search</button>
+          <button type="submit" className="btn btn-primary" style={{ flexShrink: 0 }}>
+            Search
+          </button>
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={handleClearFilters}
+              className="btn btn-secondary"
+              style={{ flexShrink: 0 }}
+            >
+              Reset Filters
+            </button>
+          )}
         </form>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 140px), 1fr))", gap: "0.75rem" }}>
-          <select className="input" value={library} onChange={(e) => { setLibrary(e.target.value); setPage(1); }}>
-            <option value="">All Libraries</option>
-            <option value="movies">Movies</option>
-            <option value="tv">TV Shows</option>
-            <option value="anime">Anime</option>
-          </select>
-
-          <select className="input" value={videoCodec} onChange={(e) => { setVideoCodec(e.target.value); setPage(1); }}>
+        {/* Filter Dropdown Controls */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 150px), 1fr))",
+            gap: "0.65rem",
+          }}
+        >
+          <select
+            className="input"
+            value={videoCodec}
+            onChange={(e) => {
+              setVideoCodec(e.target.value);
+              setPage(1);
+            }}
+          >
             <option value="">All Codecs</option>
             <option value="h264">H.264 / AVC</option>
             <option value="hevc">H.265 / HEVC</option>
@@ -183,7 +311,14 @@ export const MediaBrowser: React.FC<MediaBrowserProps> = ({
             <option value="vc1">VC-1</option>
           </select>
 
-          <select className="input" value={resolution} onChange={(e) => { setResolution(e.target.value); setPage(1); }}>
+          <select
+            className="input"
+            value={resolution}
+            onChange={(e) => {
+              setResolution(e.target.value);
+              setPage(1);
+            }}
+          >
             <option value="">All Resolutions</option>
             <option value="4K">4K (2160p)</option>
             <option value="1080p">1080p</option>
@@ -191,7 +326,14 @@ export const MediaBrowser: React.FC<MediaBrowserProps> = ({
             <option value="480p">480p</option>
           </select>
 
-          <select className="input" value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }}>
+          <select
+            className="input"
+            value={status}
+            onChange={(e) => {
+              setStatus(e.target.value);
+              setPage(1);
+            }}
+          >
             <option value="">All Statuses</option>
             <option value="unoptimized">Unoptimized</option>
             <option value="optimized">Optimized</option>
@@ -199,11 +341,15 @@ export const MediaBrowser: React.FC<MediaBrowserProps> = ({
             <option value="failed">Failed</option>
           </select>
 
-          <select className="input" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
+          <select
+            className="input"
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+          >
             <option value="mb_per_minute">Highest MB/min</option>
             <option value="size_bytes">Largest File Size</option>
             <option value="duration_seconds">Longest Duration</option>
-            <option value="filename">Filename</option>
+            <option value="filename">Filename (A-Z)</option>
           </select>
 
           {items.length > 0 && (
@@ -227,252 +373,226 @@ export const MediaBrowser: React.FC<MediaBrowserProps> = ({
         </div>
       </div>
 
-      {/* Batch Selection Banner */}
+      {/* Floating Batch Selection Action Bar */}
       {selectedIds.length > 0 && (
-        <div style={{
-          background: "rgba(168, 85, 247, 0.15)",
-          border: "1px solid rgba(168, 85, 247, 0.4)",
-          borderRadius: "var(--radius-md)",
-          padding: "0.85rem 1rem",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          flexWrap: "wrap",
-          gap: "0.75rem",
-          marginBottom: "1rem",
-        }}>
-          <div style={{ fontSize: "0.875rem", fontWeight: 600 }}>
-            {selectedIds.length} media item{selectedIds.length > 1 ? "s" : ""} selected
+        <div
+          style={{
+            position: "fixed",
+            bottom: "2rem",
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 9999,
+            background: "rgba(13, 18, 31, 0.96)",
+            border: "1px solid var(--accent-purple-light)",
+            boxShadow: "0 12px 35px rgba(0, 0, 0, 0.8), 0 0 25px rgba(139, 92, 246, 0.35)",
+            borderRadius: "var(--radius-md)",
+            padding: "0.85rem 1.35rem",
+            display: "flex",
+            alignItems: "center",
+            gap: "1rem",
+            maxWidth: "600px",
+            width: "calc(100% - 2rem)",
+            animation: "scaleUp 0.2s ease",
+          }}
+        >
+          <div style={{ fontSize: "0.88rem", fontWeight: 700, color: "#fff", flex: 1 }}>
+            {selectedIds.length} item{selectedIds.length > 1 ? "s" : ""} selected
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap", width: "100%", maxWidth: "450px" }}>
+
+          <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
             <select
               className="input"
               value={batchProfileId}
               onChange={(e) => setBatchProfileId(Number(e.target.value))}
-              style={{ minWidth: "min(100%, 180px)", flex: "1 1 auto" }}
+              style={{ width: "auto", minWidth: "160px", padding: "0.45rem 0.75rem", fontSize: "0.8rem" }}
             >
               {profiles.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
               ))}
             </select>
+
             <button
               onClick={handleBatchQueue}
               disabled={isBatchQueueing}
               className="btn btn-primary btn-sm"
-              style={{ flex: "1 1 auto" }}
             >
-              <Play size={14} /> {isBatchQueueing ? "Queueing..." : "Queue Selected"}
+              <Sparkles size={14} />
+              <span>{isBatchQueueing ? "Queueing..." : "Queue Batch"}</span>
+            </button>
+
+            <button
+              onClick={() => setSelectedIds([])}
+              className="btn btn-secondary btn-sm btn-icon"
+              title="Clear selection"
+            >
+              <X size={15} />
             </button>
           </div>
         </div>
       )}
 
-      {/* Media Items Table (Desktop View) */}
+      {/* Desktop Media Table */}
       <div className="table-wrapper desktop-only">
         <table>
           <thead>
             <tr>
-              <th style={{ width: "40px" }}>
-                <button onClick={toggleSelectAll} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer" }}>
-                  {selectedIds.length === items.length && items.length > 0 ? <CheckSquare size={16} color="var(--accent-purple-light)" /> : <Square size={16} />}
-                </button>
-              </th>
-              <th>Media Title / Filename</th>
-              <th>Library</th>
-              <th>Video / Format</th>
-              <th>Audio Tracks</th>
-              <th>Size / Duration</th>
-              <th>Density (MB/m)</th>
-              <th>Status</th>
-              <th>Actions</th>
+              <th style={{ width: "45px" }}></th>
+              <th>Media Title / File</th>
+              <th style={{ width: "110px" }}>Library</th>
+              <th style={{ width: "160px" }}>Video Specs</th>
+              <th style={{ width: "110px" }}>Size</th>
+              <th style={{ width: "130px" }}>Efficiency</th>
+              <th style={{ width: "110px" }}>Status</th>
+              <th style={{ width: "130px", textAlign: "right" }}>Actions</th>
             </tr>
           </thead>
           <tbody>
             {items.length === 0 ? (
               <tr>
-                <td colSpan={9} style={{ textAlign: "center", padding: "3rem", color: "var(--text-muted)" }}>
-                  No media files found matching the selected filters.
+                <td colSpan={8} style={{ textAlign: "center", padding: "3.5rem 1rem", color: "var(--text-muted)" }}>
+                  <Film size={32} style={{ margin: "0 auto 0.75rem", opacity: 0.5 }} />
+                  <div>No media files match your search criteria.</div>
                 </td>
               </tr>
             ) : (
-              items.map((item) => (
-                <tr key={item.id}>
-                  <td>
-                    <button onClick={() => toggleSelect(item.id)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer" }}>
-                      {selectedIds.includes(item.id) ? <CheckSquare size={16} color="var(--accent-purple-light)" /> : <Square size={16} />}
-                    </button>
-                  </td>
-                  <td>
-                    <div style={{ fontWeight: 600, maxWidth: "280px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {item.title || item.filename}
-                    </div>
-                    {item.series_name && (
-                      <div style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
-                        {item.series_name} S{item.season_number}E{item.episode_number}
-                      </div>
-                    )}
-                  </td>
-                  <td>
-                    <span className="badge badge-purple" style={{ textTransform: "capitalize" }}>
-                      {item.library}
-                    </span>
-                  </td>
-                  <td>
-                    <div style={{ display: "flex", gap: "0.25rem", alignItems: "center" }}>
-                      <span className="badge badge-cyan">{item.resolution}</span>
-                      <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>{item.video_codec.toUpperCase()}</span>
-                    </div>
-                  </td>
-                  <td>
-                    <div style={{ fontSize: "0.8rem" }}>
-                      <strong>{item.audio_tracks_count} trk</strong> ({item.audio_languages})
-                    </div>
-                  </td>
-                  <td>
-                    <div style={{ fontSize: "0.8rem" }}>
-                      <strong>{formatBytes(item.size_bytes)}</strong>
-                      <div style={{ color: "var(--text-muted)", fontSize: "0.75rem" }}>
-                        {Math.round(item.duration_seconds / 60)} min
-                      </div>
-                    </div>
-                  </td>
-                  <td>
-                    <span
-                      className={`badge ${
-                        item.mb_per_minute > 35 ? "badge-amber" : item.mb_per_minute > 25 ? "badge-purple" : "badge-emerald"
-                      }`}
-                    >
-                      {item.mb_per_minute} MB/m
-                    </span>
-                  </td>
-                  <td>
-                    <span
-                      className={`badge ${
-                        item.optimization_status === "optimized"
-                          ? "badge-emerald"
-                          : item.optimization_status === "processing"
-                          ? "badge-cyan"
-                          : item.optimization_status === "queued"
-                          ? "badge-purple"
-                          : item.optimization_status === "failed"
-                          ? "badge-rose"
-                          : "badge-amber"
-                      }`}
-                    >
-                      {item.optimization_status}
-                    </span>
-                  </td>
-                  <td>
-                    <div style={{ display: "flex", gap: "0.4rem" }}>
-                      <button
+              items.map((item) => {
+                const isSelected = selectedIds.includes(item.id);
+                const isHeavy = item.mb_per_minute > 20;
+
+                return (
+                  <tr key={item.id} style={{ background: isSelected ? "rgba(139, 92, 246, 0.08)" : undefined }}>
+                    <td>
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleSelect(item.id)}
+                        style={{ cursor: "pointer", width: "16px", height: "16px", accentColor: "var(--accent-purple)" }}
+                      />
+                    </td>
+                    <td>
+                      <div
+                        style={{
+                          fontWeight: 600,
+                          maxWidth: "360px",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                          color: "var(--text-primary)",
+                          cursor: "pointer",
+                        }}
                         onClick={() => onOpenDetail(item)}
-                        className="btn btn-secondary btn-sm"
-                        title="View Streams & Metadata"
+                        title={item.filename}
                       >
-                        <Eye size={14} />
-                      </button>
-                      <button
-                        onClick={() => onOpenDryRun(item, batchProfileId)}
-                        className="btn btn-primary btn-sm"
-                        title="Dry Run & Queue"
+                        {item.filename}
+                      </div>
+                      <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginTop: "0.2rem" }}>
+                        {item.audio_codecs?.toUpperCase() || "AUDIO"} • {item.container_format?.toUpperCase() || "MEDIA"}
+                      </div>
+                    </td>
+                    <td>
+                      <span className="badge badge-purple" style={{ textTransform: "capitalize", fontSize: "0.68rem" }}>
+                        {item.library}
+                      </span>
+                    </td>
+                    <td>
+                      <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap", alignItems: "center" }}>
+                        <span className="badge badge-cyan" style={{ fontSize: "0.68rem" }}>
+                          {item.resolution || "Unknown"}
+                        </span>
+                        <span className="badge" style={{ fontSize: "0.68rem", background: "rgba(255, 255, 255, 0.06)", color: "var(--text-secondary)" }}>
+                          {item.video_codec?.toUpperCase() || "N/A"}
+                        </span>
+                      </div>
+                    </td>
+                    <td style={{ fontFamily: "var(--font-mono)", fontSize: "0.82rem" }}>
+                      {formatBytes(item.size_bytes)}
+                    </td>
+                    <td>
+                      <div style={{ display: "flex", flexDirection: "column" }}>
+                        <span
+                          style={{
+                            fontWeight: 700,
+                            fontSize: "0.82rem",
+                            color: isHeavy ? "var(--accent-rose)" : "var(--accent-amber)",
+                          }}
+                        >
+                          {item.mb_per_minute} MB/min
+                        </span>
+                        <span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>
+                          {Math.round(item.duration_seconds / 60)} mins
+                        </span>
+                      </div>
+                    </td>
+                    <td>
+                      <span
+                        className={`badge ${
+                          item.optimization_status === "optimized"
+                            ? "badge-emerald"
+                            : item.optimization_status === "queued"
+                            ? "badge-cyan"
+                            : item.optimization_status === "failed"
+                            ? "badge-rose"
+                            : "badge-amber"
+                        }`}
+                        style={{ fontSize: "0.68rem" }}
                       >
-                        <Play size={14} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))
+                        {item.optimization_status}
+                      </span>
+                    </td>
+                    <td style={{ textAlign: "right" }}>
+                      <div style={{ display: "inline-flex", gap: "0.35rem" }}>
+                        <button
+                          onClick={() => onOpenDetail(item)}
+                          className="btn btn-secondary btn-sm btn-icon"
+                          title="Inspect Metadata"
+                        >
+                          <Eye size={15} />
+                        </button>
+                        <button
+                          onClick={() => onOpenDryRun(item, batchProfileId)}
+                          className="btn btn-secondary btn-sm btn-icon"
+                          title="Simulate Dry Run"
+                        >
+                          <Play size={15} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
       </div>
 
-      {/* Mobile Card View (Shown on small screens) */}
-      <div className="mobile-only mobile-data-cards">
-        {items.length === 0 ? (
-          <div className="card" style={{ textAlign: "center", padding: "2.5rem 1rem", color: "var(--text-muted)" }}>
-            No media files found matching the selected filters.
-          </div>
-        ) : (
-          items.map((item) => (
-            <div key={item.id} className="mobile-data-card">
-              <div className="mobile-data-card-header">
-                <div style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem", minWidth: 0, flex: 1 }}>
-                  <button onClick={() => toggleSelect(item.id)} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", padding: "2px", marginTop: "1px" }}>
-                    {selectedIds.includes(item.id) ? <CheckSquare size={18} color="var(--accent-purple-light)" /> : <Square size={18} />}
-                  </button>
-                  <div style={{ minWidth: 0 }}>
-                    <div className="mobile-data-card-title">{item.title || item.filename}</div>
-                    {item.series_name && (
-                      <div style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "2px" }}>
-                        {item.series_name} S{item.season_number}E{item.episode_number}
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <span className={`badge ${
-                  item.optimization_status === "optimized" ? "badge-emerald" :
-                  item.optimization_status === "processing" ? "badge-cyan" :
-                  item.optimization_status === "queued" ? "badge-purple" :
-                  item.optimization_status === "failed" ? "badge-rose" : "badge-amber"
-                }`} style={{ fontSize: "0.68rem", flexShrink: 0 }}>
-                  {item.optimization_status}
-                </span>
-              </div>
-
-              <div className="mobile-data-card-meta">
-                <span className="badge badge-purple" style={{ textTransform: "capitalize" }}>{item.library}</span>
-                <span className="badge badge-cyan">{item.resolution}</span>
-                <span className="badge" style={{ background: "rgba(255,255,255,0.06)", color: "#cbd5e1" }}>{item.video_codec.toUpperCase()}</span>
-                {item.is_hdr && <span className="badge badge-amber">{item.hdr_format || "HDR"}</span>}
-                <span className="badge badge-amber">{item.mb_per_minute} MB/m</span>
-              </div>
-
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.78rem", color: "var(--text-secondary)" }}>
-                <span>Size: <strong style={{ color: "var(--text-primary)" }}>{formatBytes(item.size_bytes)}</strong></span>
-                <span>Duration: <strong style={{ color: "var(--text-primary)" }}>{Math.round(item.duration_seconds / 60)} min</strong></span>
-              </div>
-
-              <div className="mobile-data-card-actions">
-                <button
-                  onClick={() => onOpenDetail(item)}
-                  className="btn btn-secondary btn-sm"
-                  style={{ flex: "1 1 auto", minHeight: "36px" }}
-                >
-                  <Eye size={14} /> Details
-                </button>
-                <button
-                  onClick={() => onOpenDryRun(item, batchProfileId)}
-                  className="btn btn-primary btn-sm"
-                  style={{ flex: "1 1 auto", minHeight: "36px" }}
-                >
-                  <Play size={14} /> Dry Run
-                </button>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-
-      {/* Pagination Controls */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "1.25rem", flexWrap: "wrap", gap: "0.75rem" }}>
-        <div style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
-          Showing {items.length} of {total} files
+      {/* Pagination Footer */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginTop: "1.25rem",
+          flexWrap: "wrap",
+          gap: "0.75rem",
+        }}
+      >
+        <div style={{ fontSize: "0.8rem", color: "var(--text-muted)" }}>
+          Showing {items.length} of {total} total media files (Page {page} of {totalPages})
         </div>
-        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+
+        <div style={{ display: "flex", gap: "0.5rem" }}>
           <button
             onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={page === 1}
+            disabled={page <= 1}
             className="btn btn-secondary btn-sm"
           >
             Previous
           </button>
-          <span style={{ display: "flex", alignItems: "center", padding: "0 0.5rem", fontSize: "0.85rem" }}>
-            Page {page} of {Math.max(1, Math.ceil(total / pageSize))}
-          </span>
           <button
-            onClick={() => setPage((p) => p + 1)}
-            disabled={page * pageSize >= total}
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            disabled={page >= totalPages}
             className="btn btn-secondary btn-sm"
           >
             Next

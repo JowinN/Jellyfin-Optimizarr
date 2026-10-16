@@ -12,6 +12,9 @@ import {
   Server,
   Cpu,
   Monitor,
+  Zap,
+  Activity,
+  CheckCircle2,
 } from "lucide-react";
 import { AnalyticsOverview, EncodingJob, MediaItem, ClusterNode } from "../types";
 import { ActiveJobsBanner } from "../components/ActiveJobsBanner";
@@ -24,7 +27,7 @@ interface DashboardProps {
 
 export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenMediaDetail }) => {
   const [overview, setOverview] = useState<AnalyticsOverview | null>(null);
-  const [activeJob, setActiveJob] = useState<EncodingJob | null>(null);
+  const [activeJobs, setActiveJobs] = useState<EncodingJob[]>([]);
   const [candidates, setCandidates] = useState<any[]>([]);
   const [nodes, setNodes] = useState<ClusterNode[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -40,7 +43,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenMediaDet
         api.getNodes(),
       ]);
       setOverview(ovData);
-      setActiveJob(queueData.length > 0 ? queueData[0] : null);
+      setActiveJobs(queueData);
       setCandidates(recsData);
       setNodes(nodesData);
     } catch (e) {
@@ -52,7 +55,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenMediaDet
 
   useEffect(() => {
     fetchDashboardData();
-    const interval = setInterval(fetchDashboardData, 8000);
+    const interval = setInterval(fetchDashboardData, 6000);
     return () => clearInterval(interval);
   }, []);
 
@@ -60,7 +63,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenMediaDet
     try {
       setIsScanning(true);
       await api.triggerScan({ force_rescan: false });
-      alert("Library scan started in background. Files will appear automatically.");
+      alert("Library scan started in background. New files and storage changes will sync automatically.");
+      setTimeout(fetchDashboardData, 3000);
     } catch (e: any) {
       alert("Scan trigger error: " + e.message);
     } finally {
@@ -80,18 +84,23 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenMediaDet
 
   return (
     <div>
-      {/* Responsive Header bar */}
+      {/* Header bar */}
       <div className="page-header">
         <div>
-          <h1 className="page-title">Optimizer Overview</h1>
+          <h1 className="page-title">Cluster Overview</h1>
           <p className="page-subtitle">
-            Real-time home server storage compression & media safety monitor
+            Distributed storage optimization, multi-node compute telemetry, and lossless backup safety
           </p>
         </div>
         <div className="page-actions">
-          <button onClick={handleTriggerScan} disabled={isScanning} className="btn btn-secondary">
-            <RefreshCw size={16} className={isScanning ? "animate-spin" : ""} />
-            {isScanning ? "Scanning..." : "Scan Libraries"}
+          <button
+            onClick={handleTriggerScan}
+            disabled={isScanning}
+            className="btn btn-secondary"
+            title="Scan libraries for new media"
+          >
+            <RefreshCw size={16} className={isScanning ? "spin" : ""} />
+            {isScanning ? "Scanning..." : "Scan Media Libraries"}
           </button>
           <button onClick={() => onNavigate("recommendations")} className="btn btn-primary">
             <Sparkles size={16} /> Smart Reclaim
@@ -99,154 +108,295 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenMediaDet
         </div>
       </div>
 
-      {/* Active Encoding Telemetry Card */}
-      <ActiveJobsBanner activeJob={activeJob} onJobCancelled={fetchDashboardData} />
+      {/* Multi-Node Active Encoding Banner */}
+      <ActiveJobsBanner activeJobs={activeJobs} onJobCancelled={fetchDashboardData} />
 
-      {/* Responsive Key Metrics Cards Grid */}
+      {/* Key Metrics KPI Grid */}
       <div className="grid-kpi">
-        {/* Realized Gross Savings */}
-        <div className="card">
-          <div style={{ display: "flex", justifyContent: "space-between", color: "var(--text-muted)", marginBottom: "0.5rem" }}>
-            <span style={{ fontSize: "0.75rem", fontWeight: 600 }}>GROSS SAVED</span>
-            <TrendingDown size={18} color="var(--accent-purple-light)" />
+        {/* Gross Reclaimed Space */}
+        <div className="card kpi-card card-interactive" onClick={() => onNavigate("analytics")}>
+          <div>
+            <div className="kpi-card-header">
+              <span className="kpi-card-title">Gross Reclaimed</span>
+              <TrendingDown size={18} color="var(--accent-purple-light)" />
+            </div>
+            <div className="kpi-card-value" style={{ color: "var(--accent-purple-light)" }}>
+              {overview ? formatBytes(overview.realized_savings_bytes) : "--"}
+            </div>
           </div>
-          <div className="kpi-value" style={{ fontSize: "1.75rem", fontWeight: 800, color: "var(--accent-purple-light)" }}>
-            {overview ? formatBytes(overview.realized_savings_bytes) : "--"}
-          </div>
-          <div style={{ fontSize: "0.72rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>
-            Avg: {overview?.average_compression_ratio || 0}%
+          <div className="kpi-card-footer">
+            <span style={{ color: "var(--accent-emerald)", fontWeight: 600 }}>
+              {overview?.average_compression_ratio || 0}% average
+            </span>{" "}
+            compression ratio
           </div>
         </div>
 
         {/* Net Savings After Backups */}
-        <div className="card">
-          <div style={{ display: "flex", justifyContent: "space-between", color: "var(--text-muted)", marginBottom: "0.5rem" }}>
-            <span style={{ fontSize: "0.75rem", fontWeight: 600 }}>NET RECLAIMED</span>
-            <HardDrive size={18} color="var(--accent-emerald)" />
+        <div className="card kpi-card card-interactive" onClick={() => onNavigate("rollback")}>
+          <div>
+            <div className="kpi-card-header">
+              <span className="kpi-card-title">Net Space Reclaimed</span>
+              <HardDrive size={18} color="var(--accent-emerald)" />
+            </div>
+            <div className="kpi-card-value" style={{ color: "var(--accent-emerald)" }}>
+              {overview ? formatBytes(overview.net_savings_bytes) : "--"}
+            </div>
           </div>
-          <div className="kpi-value" style={{ fontSize: "1.75rem", fontWeight: 800, color: "var(--accent-emerald)" }}>
-            {overview ? formatBytes(overview.net_savings_bytes) : "--"}
-          </div>
-          <div style={{ fontSize: "0.72rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>
-            Safety backups: {overview ? formatBytes(overview.backup_usage_bytes) : "0 GB"}
-          </div>
-        </div>
-
-        {/* Total Scanned Library */}
-        <div className="card">
-          <div style={{ display: "flex", justifyContent: "space-between", color: "var(--text-muted)", marginBottom: "0.5rem" }}>
-            <span style={{ fontSize: "0.75rem", fontWeight: 600 }}>SCANNED MEDIA</span>
-            <Film size={18} color="var(--accent-cyan)" />
-          </div>
-          <div className="kpi-value" style={{ fontSize: "1.75rem", fontWeight: 800, color: "#fff" }}>
-            {overview?.total_files || 0}
-          </div>
-          <div style={{ fontSize: "0.72rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>
-            Total: {overview ? formatBytes(overview.total_library_bytes) : "--"}
+          <div className="kpi-card-footer">
+            Safety backups:{" "}
+            <strong style={{ color: "var(--text-secondary)" }}>
+              {overview ? formatBytes(overview.backup_usage_bytes) : "0 GB"}
+            </strong>
           </div>
         </div>
 
-        {/* Optimized vs Pending */}
-        <div className="card">
-          <div style={{ display: "flex", justifyContent: "space-between", color: "var(--text-muted)", marginBottom: "0.5rem" }}>
-            <span style={{ fontSize: "0.75rem", fontWeight: 600 }}>OPTIMIZED</span>
-            <Database size={18} color="var(--accent-amber)" />
+        {/* Total Scanned Media */}
+        <div className="card kpi-card card-interactive" onClick={() => onNavigate("media")}>
+          <div>
+            <div className="kpi-card-header">
+              <span className="kpi-card-title">Scanned Library</span>
+              <Film size={18} color="var(--accent-cyan)" />
+            </div>
+            <div className="kpi-card-value" style={{ color: "#fff" }}>
+              {overview?.total_files || 0}
+            </div>
           </div>
-          <div className="kpi-value" style={{ fontSize: "1.75rem", fontWeight: 800, color: "var(--accent-amber)" }}>
-            {overview?.total_optimized_count || 0} <span style={{ fontSize: "0.95rem", color: "var(--text-muted)" }}>/ {overview?.pending_optimization_count || 0}</span>
+          <div className="kpi-card-footer">
+            Total disk footprint:{" "}
+            <strong style={{ color: "var(--text-secondary)" }}>
+              {overview ? formatBytes(overview.total_library_bytes) : "--"}
+            </strong>
           </div>
-          <div style={{ fontSize: "0.72rem", color: "var(--text-secondary)", marginTop: "0.25rem" }}>
-            Yield: ~{overview ? formatBytes(overview.estimated_pending_savings_bytes) : "--"}
+        </div>
+
+        {/* Optimized vs Backlog */}
+        <div className="card kpi-card card-interactive" onClick={() => onNavigate("queue")}>
+          <div>
+            <div className="kpi-card-header">
+              <span className="kpi-card-title">Optimized Backlog</span>
+              <Database size={18} color="var(--accent-amber)" />
+            </div>
+            <div className="kpi-card-value" style={{ color: "var(--accent-amber)" }}>
+              {overview?.total_optimized_count || 0}{" "}
+              <span style={{ fontSize: "1rem", color: "var(--text-muted)", fontWeight: 500 }}>
+                / {overview?.pending_optimization_count || 0} left
+              </span>
+            </div>
+          </div>
+          <div className="kpi-card-footer">
+            Estimated pending yield:{" "}
+            <strong style={{ color: "var(--accent-amber)" }}>
+              ~{overview ? formatBytes(overview.estimated_pending_savings_bytes) : "--"}
+            </strong>
           </div>
         </div>
       </div>
 
-      {/* Distributed Transcoding Cluster Fleet */}
-      <div className="card" style={{ marginBottom: "2rem", border: "1px solid rgba(99, 102, 241, 0.2)", background: "rgba(15, 23, 42, 0.5)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "0.5rem" }}>
-          <div style={{ minWidth: 0, flex: "1 1 200px" }}>
-            <h2 style={{ fontSize: "1.05rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "0.5rem" }}>
-              <Server size={18} color="var(--accent-purple-light)" /> Distributed Transcoding Fleet
+      {/* Distributed Transcoding Fleet Card */}
+      <div
+        className="card"
+        style={{
+          marginBottom: "2rem",
+          border: "1px solid rgba(139, 92, 246, 0.25)",
+          background: "rgba(13, 18, 31, 0.7)",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: "1.25rem",
+            flexWrap: "wrap",
+            gap: "0.75rem",
+          }}
+        >
+          <div style={{ minWidth: 0, flex: "1 1 240px" }}>
+            <h2
+              style={{
+                fontSize: "1.1rem",
+                fontWeight: 700,
+                display: "flex",
+                alignItems: "center",
+                gap: "0.6rem",
+                color: "var(--text-primary)",
+              }}
+            >
+              <Server size={20} color="var(--accent-purple-light)" /> Distributed Transcoding Fleet
             </h2>
-            <p style={{ fontSize: "0.78rem", color: "var(--text-secondary)", marginTop: "0.2rem" }}>
+            <p style={{ fontSize: "0.8rem", color: "var(--text-secondary)", marginTop: "0.2rem" }}>
               Active compute nodes sharing the media compression workload across the local network
             </p>
           </div>
-          <span className="badge badge-purple" style={{ fontSize: "0.72rem", flexShrink: 0 }}>
-            {nodes.filter((n) => n.status === "online").length} of {nodes.length} Online
+          <span
+            className="badge badge-purple"
+            style={{ fontSize: "0.74rem", padding: "0.3rem 0.75rem", flexShrink: 0 }}
+          >
+            {nodes.filter((n) => n.status === "online").length} of {nodes.length} Compute Nodes Online
           </span>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 250px), 1fr))", gap: "0.75rem" }}>
-          {nodes.map((node) => (
-            <div
-              key={node.node_id}
-              style={{
-                background: "rgba(30, 41, 59, 0.5)",
-                border: node.status === "online" ? "1px solid rgba(16, 185, 129, 0.3)" : "1px solid rgba(244, 63, 94, 0.2)",
-                borderRadius: "var(--radius-md)",
-                padding: "0.85rem",
-                display: "flex",
-                flexDirection: "column",
-                gap: "0.5rem",
-                minWidth: 0,
-              }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", minWidth: 0, flex: 1 }}>
-                  {node.is_primary ? (
-                    <Server size={18} color="var(--accent-cyan)" style={{ flexShrink: 0 }} />
-                  ) : (
-                    <Monitor size={18} color="var(--accent-purple-light)" style={{ flexShrink: 0 }} />
-                  )}
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <div style={{ fontWeight: 700, fontSize: "0.9rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{node.name}</div>
-                    <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {node.os_info} {node.is_primary && "• Primary Host"}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))",
+            gap: "1rem",
+          }}
+        >
+          {nodes.map((node) => {
+            const isOnline = node.status === "online";
+            const isBusy = Boolean(node.current_job_id);
+
+            return (
+              <div
+                key={node.node_id}
+                style={{
+                  background: "rgba(22, 30, 49, 0.65)",
+                  border: isBusy
+                    ? "1px solid rgba(139, 92, 246, 0.45)"
+                    : isOnline
+                    ? "1px solid rgba(16, 185, 129, 0.25)"
+                    : "1px solid rgba(244, 63, 94, 0.25)",
+                  borderRadius: "var(--radius-md)",
+                  padding: "1.1rem",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "0.75rem",
+                  minWidth: 0,
+                  boxShadow: isBusy ? "0 4px 20px rgba(139, 92, 246, 0.15)" : "none",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "flex-start",
+                    gap: "0.5rem",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.65rem", minWidth: 0, flex: 1 }}>
+                    {node.is_primary ? (
+                      <Server size={20} color="var(--accent-cyan)" style={{ flexShrink: 0 }} />
+                    ) : (
+                      <Monitor size={20} color="var(--accent-purple-light)" style={{ flexShrink: 0 }} />
+                    )}
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div
+                        style={{
+                          fontWeight: 700,
+                          fontSize: "0.94rem",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {node.name}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: "0.72rem",
+                          color: "var(--text-muted)",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {node.os_info} {node.is_primary && "• Primary Host"}
+                      </div>
                     </div>
                   </div>
-                </div>
-                <span className={`badge ${node.status === "online" ? "badge-emerald" : "badge-rose"}`} style={{ fontSize: "0.68rem", flexShrink: 0 }}>
-                  {node.status}
-                </span>
-              </div>
 
-              <div style={{ fontSize: "0.78rem", color: "var(--text-secondary)", display: "flex", flexDirection: "column", gap: "0.2rem" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-                  <Cpu size={13} color="var(--accent-amber)" />
-                  <span>{node.cpu_model} ({node.cpu_cores} cores)</span>
+                  <span
+                    className={`badge ${
+                      isBusy
+                        ? "badge-purple"
+                        : isOnline
+                        ? "badge-emerald"
+                        : "badge-rose"
+                    }`}
+                    style={{ fontSize: "0.7rem", flexShrink: 0 }}
+                  >
+                    {isBusy ? (
+                      <>
+                        <Activity size={12} className="spin" /> Busy
+                      </>
+                    ) : isOnline ? (
+                      <>
+                        <CheckCircle2 size={12} /> Online
+                      </>
+                    ) : (
+                      "Offline"
+                    )}
+                  </span>
                 </div>
-                {node.gpu_model && (
-                  <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-                    <HardDrive size={13} color="var(--accent-emerald)" />
-                    <span>{node.gpu_model}</span>
+
+                <div
+                  style={{
+                    fontSize: "0.78rem",
+                    color: "var(--text-secondary)",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "0.35rem",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}>
+                    <Cpu size={14} color="var(--accent-amber)" />
+                    <span>
+                      {node.cpu_model} ({node.cpu_cores} cores)
+                    </span>
+                  </div>
+                  {node.gpu_model && (
+                    <div style={{ display: "flex", alignItems: "center", gap: "0.45rem" }}>
+                      <Zap size={14} color="var(--accent-emerald)" />
+                      <span style={{ color: "var(--text-primary)", fontWeight: 500 }}>
+                        {node.gpu_model} (Hardware Acceleration)
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {node.supported_encoders && node.supported_encoders.length > 0 && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
+                    {node.supported_encoders.map((enc) => (
+                      <span
+                        key={enc}
+                        className="badge"
+                        style={{
+                          fontSize: "0.64rem",
+                          padding: "2px 6px",
+                          background: "rgba(15, 23, 42, 0.8)",
+                          color: "#cbd5e1",
+                          border: "1px solid rgba(255, 255, 255, 0.08)",
+                        }}
+                      >
+                        {enc}
+                      </span>
+                    ))}
                   </div>
                 )}
-              </div>
 
-              {node.supported_encoders && node.supported_encoders.length > 0 && (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "0.3rem", marginTop: "0.1rem" }}>
-                  {node.supported_encoders.map((enc) => (
-                    <span
-                      key={enc}
-                      className="badge"
-                      style={{ fontSize: "0.62rem", padding: "1px 5px", background: "rgba(51, 65, 85, 0.8)", color: "#cbd5e1" }}
-                    >
-                      {enc}
+                <div
+                  style={{
+                    fontSize: "0.74rem",
+                    borderTop: "1px solid rgba(255, 255, 255, 0.06)",
+                    paddingTop: "0.55rem",
+                    marginTop: "0.2rem",
+                  }}
+                >
+                  {node.current_job_id ? (
+                    <span style={{ color: "var(--accent-purple-light)", fontWeight: 700 }}>
+                      ⚡ Actively encoding Job #{node.current_job_id}
                     </span>
-                  ))}
+                  ) : (
+                    <span style={{ color: "var(--text-muted)" }}>
+                      Status: {isOnline ? "Idle • Ready for queue assignments" : "Disconnected"}
+                    </span>
+                  )}
                 </div>
-              )}
-
-              <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", borderTop: "1px solid rgba(255, 255, 255, 0.05)", paddingTop: "0.4rem", marginTop: "0.2rem" }}>
-                {node.current_job_id ? (
-                  <span style={{ color: "var(--accent-cyan)", fontWeight: 600 }}>Processing Job #{node.current_job_id}</span>
-                ) : (
-                  <span>State: {node.status === "online" ? "Idle • Ready for queue" : "Disconnected"}</span>
-                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
@@ -254,42 +404,107 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenMediaDet
       <div className="grid-split">
         {/* Library Storage Breakdown */}
         <div className="card">
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "0.5rem" }}>
-            <h2 style={{ fontSize: "1.05rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "0.5rem", minWidth: 0 }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: "1.25rem",
+              flexWrap: "wrap",
+              gap: "0.5rem",
+            }}
+          >
+            <h2
+              style={{
+                fontSize: "1.1rem",
+                fontWeight: 700,
+                display: "flex",
+                alignItems: "center",
+                gap: "0.5rem",
+                minWidth: 0,
+              }}
+            >
               <Film size={18} color="var(--accent-cyan)" /> Library Storage Breakdown
             </h2>
-            <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
-              {overview?.libraries.length || 0} Libraries
+            <span style={{ fontSize: "0.78rem", color: "var(--text-muted)" }}>
+              {overview?.libraries.length || 0} Managed Folders
             </span>
           </div>
 
-          {(!overview || overview.libraries.length === 0) ? (
-            <div style={{ color: "var(--text-muted)", fontSize: "0.85rem", padding: "1.5rem 0", textAlign: "center" }}>
-              No libraries detected. Run a scan to discover your Jellyfin libraries.
+          {!overview || overview.libraries.length === 0 ? (
+            <div
+              style={{
+                color: "var(--text-muted)",
+                fontSize: "0.88rem",
+                padding: "2rem 0",
+                textAlign: "center",
+              }}
+            >
+              No libraries detected. Run a scan to index your Jellyfin files.
             </div>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
               {overview.libraries.map((lib) => {
-                const optPercent = lib.total_files > 0 ? (lib.optimized_files / lib.total_files) * 100 : 0;
+                const optPercent =
+                  lib.total_files > 0 ? (lib.optimized_files / lib.total_files) * 100 : 0;
                 return (
-                  <div key={lib.library} style={{ background: "rgba(30, 41, 59, 0.4)", padding: "0.85rem", borderRadius: "var(--radius-md)", border: "1px solid rgba(255, 255, 255, 0.04)" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.4rem", marginBottom: "0.4rem" }}>
+                  <div
+                    key={lib.library}
+                    style={{
+                      background: "rgba(22, 30, 49, 0.5)",
+                      padding: "1rem",
+                      borderRadius: "var(--radius-md)",
+                      border: "1px solid rgba(255, 255, 255, 0.06)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        flexWrap: "wrap",
+                        gap: "0.4rem",
+                        marginBottom: "0.5rem",
+                      }}
+                    >
                       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", minWidth: 0 }}>
-                        <span className="badge badge-purple" style={{ textTransform: "capitalize", flexShrink: 0 }}>{lib.library}</span>
-                        <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>{lib.total_files} files</span>
+                        <span
+                          className="badge badge-purple"
+                          style={{ textTransform: "capitalize", flexShrink: 0, fontWeight: 700 }}
+                        >
+                          {lib.library}
+                        </span>
+                        <span style={{ fontSize: "0.82rem", color: "var(--text-secondary)" }}>
+                          {lib.total_files} files
+                        </span>
                       </div>
-                      <strong style={{ fontSize: "0.92rem", color: "var(--text-primary)" }}>{formatBytes(lib.total_source_bytes)}</strong>
+                      <strong style={{ fontSize: "0.95rem", color: "var(--text-primary)" }}>
+                        {formatBytes(lib.total_source_bytes)}
+                      </strong>
                     </div>
-                    <div className="progress-container" style={{ height: "6px" }}>
+
+                    <div className="progress-container" style={{ height: "7px" }}>
                       <div
                         className="progress-fill"
                         style={{
                           width: `${optPercent}%`,
+                          background: "linear-gradient(90deg, #10b981 0%, #06b6d4 100%)",
                         }}
                       />
                     </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", color: "var(--text-muted)", marginTop: "0.35rem" }}>
-                      <span style={{ color: "var(--accent-emerald)" }}>{lib.optimized_files} optimized ({optPercent.toFixed(0)}%)</span>
+
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        fontSize: "0.76rem",
+                        color: "var(--text-muted)",
+                        marginTop: "0.45rem",
+                      }}
+                    >
+                      <span style={{ color: "var(--accent-emerald)", fontWeight: 600 }}>
+                        {lib.optimized_files} optimized ({optPercent.toFixed(0)}%)
+                      </span>
                       <span>{lib.total_files - lib.optimized_files} pending</span>
                     </div>
                   </div>
@@ -301,50 +516,119 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenMediaDet
 
         {/* High-Yield Candidate Highlights */}
         <div className="card">
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "0.5rem" }}>
-            <h2 style={{ fontSize: "1.05rem", fontWeight: 700, display: "flex", alignItems: "center", gap: "0.5rem", minWidth: 0 }}>
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: "1.25rem",
+              flexWrap: "wrap",
+              gap: "0.5rem",
+            }}
+          >
+            <h2
+              style={{
+                fontSize: "1.1rem",
+                fontWeight: 700,
+                display: "flex",
+                alignItems: "center",
+                gap: "0.5rem",
+                minWidth: 0,
+              }}
+            >
               <Sparkles size={18} color="var(--accent-purple-light)" /> High-Payoff Candidates
             </h2>
-            <button onClick={() => onNavigate("recommendations")} className="btn btn-secondary btn-sm" style={{ padding: "0.35rem 0.65rem", fontSize: "0.75rem" }}>
+            <button
+              onClick={() => onNavigate("recommendations")}
+              className="btn btn-secondary btn-sm"
+            >
               View All <ArrowUpRight size={13} />
             </button>
           </div>
 
           {candidates.length === 0 ? (
-            <div style={{ color: "var(--text-muted)", fontSize: "0.85rem", padding: "1.5rem 0", textAlign: "center" }}>
-              No heavy optimization candidates detected. Run a scan to discover media.
+            <div
+              style={{
+                color: "var(--text-muted)",
+                fontSize: "0.88rem",
+                padding: "2rem 0",
+                textAlign: "center",
+              }}
+            >
+              No bloated media candidates detected. Library is well-optimized!
             </div>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: "0.65rem" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
               {candidates.map((cand) => (
                 <div
                   key={cand.media_item_id}
                   style={{
-                    background: "rgba(30, 41, 59, 0.45)",
+                    background: "rgba(22, 30, 49, 0.5)",
                     border: "1px solid rgba(255, 255, 255, 0.06)",
                     borderRadius: "var(--radius-md)",
-                    padding: "0.75rem 0.85rem",
+                    padding: "0.85rem 1rem",
                     cursor: "pointer",
                     display: "flex",
                     flexDirection: "column",
-                    gap: "0.35rem",
-                    transition: "border-color 0.15s ease, background 0.15s ease",
+                    gap: "0.4rem",
+                    transition: "border-color 0.15s ease, transform 0.15s ease",
                   }}
+                  className="card-interactive"
                   onClick={() => onNavigate("recommendations")}
                 >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.5rem" }}>
-                    <div style={{ fontWeight: 600, fontSize: "0.85rem", color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "flex-start",
+                      gap: "0.5rem",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontWeight: 600,
+                        fontSize: "0.88rem",
+                        color: "var(--text-primary)",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        flex: 1,
+                        minWidth: 0,
+                      }}
+                    >
                       {cand.filename}
                     </div>
-                    <span className="badge badge-emerald" style={{ fontSize: "0.68rem", flexShrink: 0 }}>
+                    <span
+                      className="badge badge-emerald"
+                      style={{ fontSize: "0.7rem", flexShrink: 0, fontWeight: 700 }}
+                    >
                       Save ~{cand.estimated_savings_percent}%
                     </span>
                   </div>
-                  <div style={{ display: "flex", gap: "0.4rem", fontSize: "0.74rem", color: "var(--text-secondary)", flexWrap: "wrap", alignItems: "center" }}>
-                    <span className="badge badge-cyan" style={{ fontSize: "0.65rem", padding: "1px 6px" }}>{cand.resolution}</span>
-                    <span style={{ color: "var(--accent-amber)" }}>{cand.mb_per_minute} MB/min</span>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "0.5rem",
+                      fontSize: "0.75rem",
+                      color: "var(--text-secondary)",
+                      flexWrap: "wrap",
+                      alignItems: "center",
+                    }}
+                  >
+                    <span
+                      className="badge badge-cyan"
+                      style={{ fontSize: "0.68rem", padding: "1px 6px" }}
+                    >
+                      {cand.resolution}
+                    </span>
+                    <span style={{ color: "var(--accent-amber)", fontWeight: 600 }}>
+                      {cand.mb_per_minute} MB/min
+                    </span>
                     <span>•</span>
-                    <span style={{ color: "var(--text-primary)" }}>Save ~{formatBytes(cand.estimated_saved_bytes)}</span>
+                    <span style={{ color: "var(--text-primary)" }}>
+                      Reclaim ~{formatBytes(cand.estimated_saved_bytes)}
+                    </span>
                   </div>
                 </div>
               ))}
