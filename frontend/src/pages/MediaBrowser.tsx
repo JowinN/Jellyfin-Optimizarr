@@ -18,6 +18,7 @@ import {
   ArrowUpDown,
 } from "lucide-react";
 import { MediaItem, EncodingProfile } from "../types";
+import { useToast } from "../context/ToastContext";
 import { api } from "../api";
 
 interface MediaBrowserProps {
@@ -31,6 +32,7 @@ export const MediaBrowser: React.FC<MediaBrowserProps> = ({
   onOpenDetail,
   onOpenDryRun,
 }) => {
+  const { toast } = useToast();
   const [items, setItems] = useState<MediaItem[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -122,11 +124,11 @@ export const MediaBrowser: React.FC<MediaBrowserProps> = ({
         profile_id: batchProfileId,
         replacement_mode: "safe_backup",
       });
-      alert(`Queued ${selectedIds.length} media items for optimization!`);
+      toast.success(`Queued ${selectedIds.length} media items for optimization!`, "Batch Queued");
       setSelectedIds([]);
       fetchMedia();
     } catch (err: any) {
-      alert("Error queueing batch: " + err.message);
+      toast.error("Error queueing batch: " + err.message, "Queue Error");
     } finally {
       setIsBatchQueueing(false);
     }
@@ -135,20 +137,20 @@ export const MediaBrowser: React.FC<MediaBrowserProps> = ({
   const handlePruneMissing = async () => {
     try {
       const res = await api.pruneMedia();
-      alert(`Pruned ${res.pruned_count} missing media records from database.`);
+      toast.success(`Pruned ${res.pruned_count} missing media records from database.`, "Library Pruned");
       fetchMedia();
     } catch (e: any) {
-      alert("Error pruning missing files: " + e.message);
+      toast.error("Error pruning missing files: " + e.message, "Prune Error");
     }
   };
 
   const handleRescan = async () => {
     try {
       await api.triggerScan({ force_rescan: false });
-      alert("Library scan started in background. New files and storage changes will sync automatically.");
+      toast.info("Library scan started in background. New files and storage changes will sync automatically.", "Scan Started");
       setTimeout(fetchMedia, 3000);
     } catch (e: any) {
-      alert("Error starting scan: " + e.message);
+      toast.error("Error starting scan: " + e.message, "Scan Error");
     }
   };
 

@@ -3,6 +3,7 @@ import { Sliders, Plus, Edit2, Trash2, Shield, CheckCircle, RotateCcw, Zap, Cpu,
 import { EncodingProfile } from "../types";
 import { ProfileEditorModal } from "../components/ProfileEditorModal";
 import { api } from "../api";
+import { useToast } from "../context/ToastContext";
 
 interface ProfilesPageProps {
   profiles: EncodingProfile[];
@@ -10,6 +11,7 @@ interface ProfilesPageProps {
 }
 
 export const ProfilesPage: React.FC<ProfilesPageProps> = ({ profiles, onRefreshProfiles }) => {
+  const { toast } = useToast();
   const [selectedProfile, setSelectedProfile] = useState<EncodingProfile | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
@@ -32,9 +34,10 @@ export const ProfilesPage: React.FC<ProfilesPageProps> = ({ profiles, onRefreshP
     if (confirm(confirmMsg)) {
       try {
         await api.deleteProfile(id);
+        toast.success(`Deleted profile "${name}"`);
         onRefreshProfiles();
       } catch (e: any) {
-        alert("Error: " + e.message);
+        toast.error("Error deleting profile: " + e.message);
       }
     }
   };
@@ -44,9 +47,10 @@ export const ProfilesPage: React.FC<ProfilesPageProps> = ({ profiles, onRefreshP
       try {
         setIsRestoring(true);
         await api.restoreDefaultProfiles();
+        toast.success("Default profiles restored successfully");
         onRefreshProfiles();
       } catch (e: any) {
-        alert("Error restoring defaults: " + e.message);
+        toast.error("Error restoring defaults: " + e.message);
       } finally {
         setIsRestoring(false);
       }
@@ -96,9 +100,9 @@ export const ProfilesPage: React.FC<ProfilesPageProps> = ({ profiles, onRefreshP
                 flexDirection: "column",
                 justifyContent: "space-between",
                 border: p.is_preset
-                  ? "1px solid rgba(255, 255, 255, 0.08)"
-                  : "1px solid rgba(139, 92, 246, 0.35)",
-                background: "rgba(22, 30, 49, 0.55)",
+                  ? "1px solid var(--border-subtle)"
+                  : "1px solid var(--primary)",
+                background: "var(--surface-container)",
               }}
             >
               <div>
@@ -189,7 +193,7 @@ export const ProfilesPage: React.FC<ProfilesPageProps> = ({ profiles, onRefreshP
                   display: "flex",
                   justifyContent: "flex-end",
                   gap: "0.5rem",
-                  borderTop: "1px solid rgba(255, 255, 255, 0.06)",
+                  borderTop: "1px solid var(--border-subtle)",
                   paddingTop: "0.85rem",
                   marginTop: "0.5rem",
                 }}

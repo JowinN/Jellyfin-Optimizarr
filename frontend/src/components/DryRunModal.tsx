@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { X, CheckCircle, AlertTriangle, Terminal, HardDrive, ArrowRight, Play } from "lucide-react";
 import { DryRunPlan } from "../types";
 import { api } from "../api";
+import { useToast } from "../context/ToastContext";
 
 interface DryRunModalProps {
   plan: DryRunPlan | null;
@@ -17,6 +18,7 @@ export const DryRunModal: React.FC<DryRunModalProps> = ({
   onJobEnqueued,
 }) => {
   if (!plan) return null;
+  const { toast } = useToast();
 
   const [showArgs, setShowArgs] = useState(false);
   const [isQueueing, setIsQueueing] = useState(false);
@@ -36,11 +38,11 @@ export const DryRunModal: React.FC<DryRunModalProps> = ({
         profile_id: profileId,
         replacement_mode: "replace_with_backup",
       });
-      alert("Job added to persistent queue!");
+      toast.success("Job added to persistent queue!");
       onJobEnqueued();
       onClose();
     } catch (err: any) {
-      alert("Failed to queue job: " + err.message);
+      toast.error("Failed to queue job: " + err.message);
     } finally {
       setIsQueueing(false);
     }

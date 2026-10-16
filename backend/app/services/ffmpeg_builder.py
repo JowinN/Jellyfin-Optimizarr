@@ -149,7 +149,7 @@ class FFmpegCommandBuilder:
                 should_downmix = (
                     codec_flag == "libopus"
                     or getattr(profile, "stereo_downmix_compatibility", False)
-                    or getattr(profile, "target_mb_per_minute", 0) > 0
+                    or (getattr(profile, "target_mb_per_minute", 0) or 0) > 0
                     or track_channels > 2
                 )
                 if should_downmix and codec_flag in ("libopus", "aac", "libmp3lame"):

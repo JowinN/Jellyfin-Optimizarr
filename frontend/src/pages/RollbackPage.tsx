@@ -2,8 +2,10 @@ import React, { useState, useEffect } from "react";
 import { History, RotateCcw, Trash2, CheckCircle, ShieldCheck, AlertTriangle } from "lucide-react";
 import { RollbackRecord } from "../types";
 import { api } from "../api";
+import { useToast } from "../context/ToastContext";
 
 export const RollbackPage: React.FC = () => {
+  const { toast } = useToast();
   const [records, setRecords] = useState<RollbackRecord[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -30,10 +32,10 @@ export const RollbackPage: React.FC = () => {
     if (confirm(`Restore original uncompressed media for '${filename}'? This will replace the optimized file with your safety backup.`)) {
       try {
         await api.restoreRollback(recordId);
-        alert("Original file restored successfully!");
+        toast.success("Original file restored successfully!");
         fetchRecords();
       } catch (e: any) {
-        alert("Rollback failed: " + e.message);
+        toast.error("Rollback failed: " + e.message);
       }
     }
   };
@@ -42,10 +44,10 @@ export const RollbackPage: React.FC = () => {
     if (confirm("Permanently delete this backup from disk? You will not be able to revert to the original uncompressed file.")) {
       try {
         await api.purgeBackup(recordId);
-        alert("Backup purged from storage.");
+        toast.success("Backup purged from storage.");
         fetchRecords();
       } catch (e: any) {
-        alert("Error purging backup: " + e.message);
+        toast.error("Error purging backup: " + e.message);
       }
     }
   };
@@ -53,7 +55,7 @@ export const RollbackPage: React.FC = () => {
   const handleRestoreAll = async () => {
     const available = records.filter((r) => r.status === "available");
     if (available.length === 0) {
-      alert("No available backups to restore.");
+      toast.info("No available backups to restore.");
       return;
     }
 
@@ -61,10 +63,10 @@ export const RollbackPage: React.FC = () => {
       try {
         setIsRestoringAll(true);
         const res = await api.restoreAllRollbacks();
-        alert(res.message);
+        toast.success(res.message);
         fetchRecords();
       } catch (e: any) {
-        alert("Bulk rollback failed: " + e.message);
+        toast.error("Bulk rollback failed: " + e.message);
       } finally {
         setIsRestoringAll(false);
       }
@@ -74,7 +76,7 @@ export const RollbackPage: React.FC = () => {
   const handlePurgeAll = async () => {
     const available = records.filter((r) => r.status === "available");
     if (available.length === 0) {
-      alert("No available backups to prune.");
+      toast.info("No available backups to prune.");
       return;
     }
 
@@ -82,10 +84,10 @@ export const RollbackPage: React.FC = () => {
       try {
         setIsPurgingAll(true);
         const res = await api.purgeAllBackups();
-        alert(res.message);
+        toast.success(res.message);
         fetchRecords();
       } catch (e: any) {
-        alert("Bulk purge failed: " + e.message);
+        toast.error("Bulk purge failed: " + e.message);
       } finally {
         setIsPurgingAll(false);
       }

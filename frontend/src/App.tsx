@@ -17,6 +17,7 @@ import { MediaDetailModal } from "./components/MediaDetailModal";
 import { DryRunModal } from "./components/DryRunModal";
 import { MediaItem, EncodingProfile, DryRunPlan } from "./types";
 import { api } from "./api";
+import { useToast } from "./context/ToastContext";
 import {
   X,
   AlertCircle,
@@ -32,6 +33,7 @@ import {
 } from "lucide-react";
 
 export const App: React.FC = () => {
+  const { toast } = useToast();
   const { token, needsSetup, isLoading } = useAuth();
   const { notifications, dismissNotification, isConnected } = useSSE();
 
@@ -74,7 +76,7 @@ export const App: React.FC = () => {
       setDryRunPlan(plan);
       setDryRunProfileId(profileId);
     } catch (e: any) {
-      alert("Failed to calculate dry run: " + e.message);
+      toast.error("Failed to calculate dry run: " + e.message);
     }
   };
 

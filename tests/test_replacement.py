@@ -101,3 +101,40 @@ async def test_replacement_aborts_if_output_larger_than_source(test_session):
         assert ">= original" in msg
         assert backup_path is None
         mock_move.assert_not_called()
+
+@pytest.mark.asyncio
+async def test_replacement_in_place_mode_leaves_no_backup(test_session):
+    """Verify that in_place replacement directly replaces file and never creates a persistent backup."""
+    item = MediaItem(
+        path="/tv/Pokemon - S01E01.mkv",
+        filename="Pokemon - S01E01.mkv",
+        library="tv",
+        size_bytes=250000000,
+        mtime=100.0,
+    )
+    test_session.add(item)
+    await test_session.commit()
+
+    with patch("os.path.exists", return_value=True), \
+         patch("os.stat", return_value=MagicMock(st_mtime=100.0, st_size=250000000)), \
+         patch("os.path.getsize", return_value=180000000), \
+         patch("shutil.move") as mock_move, \
+         patch("os.remove") as mock_remove, \
+         patch("os.chown"), \
+         patch.object(replacement_manager, "check_disk_space", return_value=(True, 50.0)):
+
+        success, msg, backup_path = await replacement_manager.execute_replacement(
+            session=test_session,
+            media_item=item,
+            temp_encoded_path="/work/encoded_pokemon.mkv",
+            replacement_mode="in_place",
+            pre_encode_mtime=100.0,
+            pre_encode_size=250000000,
+            job_id=42,
+        )
+
+        assert success is True
+        assert "without backup" in msg
+        assert backup_path is None
+        # Verify swap was purged
+        mock_remove.assert_called_once_with("/tv/Pokemon - S01E01.mkv.transact_swap_42")

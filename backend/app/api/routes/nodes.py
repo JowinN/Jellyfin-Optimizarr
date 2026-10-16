@@ -18,6 +18,7 @@ from app.core.events import event_broadcaster
 from app.services.validator import output_validator
 from app.services.replacement_manager import replacement_manager
 from app.services.notification_service import notification_service
+from app.core.security import validate_safe_path
 
 router = APIRouter(prefix="/nodes", tags=["Distributed Worker Nodes"])
 
@@ -150,94 +151,127 @@ async def poll_job_for_node(
     node_name: str = Query("Remote Worker", description="Worker display name"),
     session: AsyncSession = Depends(get_db),
 ):
-    """Allows a remote worker node to lease the next pending job."""
-    stmt = (
-        select(EncodingJob)
-        .where(
-            and_(
-                EncodingJob.status == "pending",
-                or_(
-                    EncodingJob.assigned_node_id.is_(None),
-                    EncodingJob.assigned_node_id.in_(["any", "", node_id]),
-                ),
+    """Allows a remote worker node to lease the next pending job, automatically filtering and cancelling redundant duplicates."""
+    while True:
+        stmt = (
+            select(EncodingJob)
+            .where(
+                and_(
+                    EncodingJob.status == "pending",
+                    or_(
+                        EncodingJob.assigned_node_id.is_(None),
+                        EncodingJob.assigned_node_id.in_(["any", "", node_id]),
+                    ),
+                )
             )
+            .order_by(EncodingJob.priority.desc(), EncodingJob.created_at.asc())
+            .limit(1)
         )
-        .order_by(EncodingJob.priority.desc(), EncodingJob.created_at.asc())
-        .limit(1)
-    )
-    job = (await session.execute(stmt)).scalar_one_or_none()
-    if not job:
-        return {"has_job": False, "job": None}
+        job = (await session.execute(stmt)).scalar_one_or_none()
+        if not job:
+            return {"has_job": False, "job": None}
 
-    # Fetch related media item and profile
-    stmt_media = select(MediaItem).where(MediaItem.id == job.media_item_id)
-    media_item = (await session.execute(stmt_media)).scalar_one_or_none()
+        # Fetch related media item and profile
+        stmt_media = select(MediaItem).where(MediaItem.id == job.media_item_id)
+        media_item = (await session.execute(stmt_media)).scalar_one_or_none()
 
-    stmt_profile = select(EncodingProfile).where(EncodingProfile.id == job.profile_id)
-    profile = (await session.execute(stmt_profile)).scalar_one_or_none()
+        stmt_profile = select(EncodingProfile).where(EncodingProfile.id == job.profile_id)
+        profile = (await session.execute(stmt_profile)).scalar_one_or_none()
 
-    if not media_item or not profile:
-        return {"has_job": False, "job": None}
+        if not media_item or not profile:
+            job.status = "cancelled"
+            job.stage = "cancelled"
+            job.error_message = "Stale job: media item or encoding profile not found"
+            await session.commit()
+            continue
 
-    # Transition job to running on remote node
-    job.status = "running"
-    job.stage = "encoding_remote"
-    job.started_at = datetime.utcnow()
-    job.assigned_node_id = node_id
-    job.assigned_node_name = node_name
-    media_item.optimization_status = "processing"
+        # Check if media item already has a completed job or is already marked optimized
+        stmt_completed = select(EncodingJob.id).where(
+            and_(
+                EncodingJob.media_item_id == media_item.id,
+                EncodingJob.id != job.id,
+                EncodingJob.status == "completed",
+            )
+        ).limit(1)
+        completed_job_id = (await session.execute(stmt_completed)).scalar_one_or_none()
 
-    await session.commit()
-    await session.refresh(job)
+        if completed_job_id or media_item.optimization_status == "optimized":
+            logger.info(
+                f"Auto-cancelling redundant pending Job #{job.id} for '{media_item.filename}'. "
+                f"Item was already completed by Job #{completed_job_id or 'earlier'}."
+            )
+            job.status = "cancelled"
+            job.stage = "cancelled"
+            job.error_message = f"Cancelled: Media item was already successfully optimized by earlier completed job #{completed_job_id or 'prior'}"
+            media_item.optimization_status = "optimized"
+            await session.commit()
+            await event_broadcaster.broadcast("job_status", {
+                "id": job.id,
+                "status": "cancelled",
+                "stage": "cancelled",
+                "error_message": job.error_message,
+            })
+            continue
 
-    await event_broadcaster.broadcast("job_status", {
-        "id": job.id,
-        "status": "running",
-        "stage": "encoding_remote",
-        "assigned_node_name": node_name,
-    })
+        # Transition job to running on remote node
+        job.status = "running"
+        job.stage = "encoding_remote"
+        job.started_at = datetime.utcnow()
+        job.assigned_node_id = node_id
+        job.assigned_node_name = node_name
+        media_item.optimization_status = "processing"
 
-    logger.info(f"Leased Job #{job.id} ('{media_item.filename}') to remote node '{node_name}'")
+        await session.commit()
+        await session.refresh(job)
 
-    return {
-        "has_job": True,
-        "job": {
+        await event_broadcaster.broadcast("job_status", {
             "id": job.id,
-            "filename": os.path.basename(job.source_path),
-            "source_size_bytes": job.source_size_bytes,
-            "replacement_mode": job.replacement_mode,
-            "download_url": f"/api/nodes/jobs/{job.id}/source",
-            "media": {
-                "duration_seconds": media_item.duration_seconds,
-                "width": media_item.width,
-                "height": media_item.height,
-                "video_codec": media_item.video_codec,
-                "bit_depth": media_item.bit_depth,
-                "is_hdr": media_item.is_hdr,
-                "audio_tracks_count": media_item.audio_tracks_count,
-                "subtitle_tracks_count": media_item.subtitle_tracks_count,
-                "streams_detail": media_item.streams_detail,
+            "status": "running",
+            "stage": "encoding_remote",
+            "assigned_node_name": node_name,
+        })
+
+        logger.info(f"Leased Job #{job.id} ('{media_item.filename}') to remote node '{node_name}'")
+
+        return {
+            "has_job": True,
+            "job": {
+                "id": job.id,
+                "filename": os.path.basename(job.source_path),
+                "source_size_bytes": job.source_size_bytes,
+                "replacement_mode": job.replacement_mode,
+                "download_url": f"/api/nodes/jobs/{job.id}/source",
+                "media": {
+                    "duration_seconds": media_item.duration_seconds,
+                    "width": media_item.width,
+                    "height": media_item.height,
+                    "video_codec": media_item.video_codec,
+                    "bit_depth": media_item.bit_depth,
+                    "is_hdr": media_item.is_hdr,
+                    "audio_tracks_count": media_item.audio_tracks_count,
+                    "subtitle_tracks_count": media_item.subtitle_tracks_count,
+                    "streams_detail": media_item.streams_detail,
+                },
+                "profile": {
+                    "name": profile.name,
+                    "video_codec": profile.video_codec,
+                    "scale_down_percent": getattr(profile, "scale_down_percent", 0) or 0,
+                    "target_mb_per_minute": getattr(profile, "target_mb_per_minute", 0.0) or 0.0,
+                    "min_storage_saving_percent": getattr(profile, "min_storage_saving_percent", 0.0) or 0.0,
+                    "target_bitrate_kbps": profile.target_bitrate_kbps,
+                    "crf": profile.crf,
+                    "encoder_preset": profile.encoder_preset,
+                    "pixel_format": profile.pixel_format,
+                    "audio_policy": profile.audio_policy,
+                    "preferred_audio_codec": profile.preferred_audio_codec,
+                    "audio_bitrate_kbps": profile.audio_bitrate_kbps,
+                    "subtitle_policy": profile.subtitle_policy,
+                    "resolution_mode": profile.resolution_mode,
+                    "max_height": profile.max_height,
+                    "hwaccel_type": profile.hwaccel_type,
+                },
             },
-            "profile": {
-                "name": profile.name,
-                "video_codec": profile.video_codec,
-                "scale_down_percent": getattr(profile, "scale_down_percent", 0) or 0,
-                "target_mb_per_minute": getattr(profile, "target_mb_per_minute", 0.0) or 0.0,
-                "min_storage_saving_percent": getattr(profile, "min_storage_saving_percent", 0.0) or 0.0,
-                "target_bitrate_kbps": profile.target_bitrate_kbps,
-                "crf": profile.crf,
-                "encoder_preset": profile.encoder_preset,
-                "pixel_format": profile.pixel_format,
-                "audio_policy": profile.audio_policy,
-                "preferred_audio_codec": profile.preferred_audio_codec,
-                "audio_bitrate_kbps": profile.audio_bitrate_kbps,
-                "subtitle_policy": profile.subtitle_policy,
-                "resolution_mode": profile.resolution_mode,
-                "max_height": profile.max_height,
-                "hwaccel_type": profile.hwaccel_type,
-            },
-        },
-    }
+        }
 
 @router.get("/jobs/{job_id}/source")
 async def stream_job_source_file(
@@ -250,9 +284,11 @@ async def stream_job_source_file(
     if not job or not os.path.exists(job.source_path):
         raise HTTPException(status_code=404, detail="Source file not found")
 
+    safe_path = validate_safe_path(job.source_path)
+
     return FileResponse(
-        path=job.source_path,
-        filename=os.path.basename(job.source_path),
+        path=safe_path,
+        filename=os.path.basename(safe_path),
         media_type="application/octet-stream",
     )
 
@@ -306,8 +342,9 @@ async def upload_job_output(
     if not media_item or not profile:
         raise HTTPException(status_code=404, detail="Associated media item or profile not found")
 
-    # Save uploaded file to /work directory
-    target_work_file = os.path.join(settings.WORK_DIR, f"remote_encode_{job.id}_{media_item.filename}")
+    # Save uploaded file safely to /work directory
+    safe_base = os.path.basename(media_item.filename)
+    target_work_file = validate_safe_path(os.path.join(settings.WORK_DIR, f"remote_encode_{job.id}_{safe_base}"))
     job.temp_output_path = target_work_file
     job.stage = "validating"
     job.progress_percent = 100.0
@@ -400,7 +437,22 @@ async def upload_job_output(
         job.status = "failed"
         job.stage = "failed"
         job.error_message = str(e)
-        media_item.optimization_status = "failed"
+
+        # Self-healing safety check: if media item was already optimized by another completed job, preserve optimized status!
+        stmt_completed = select(EncodingJob.id).where(
+            and_(
+                EncodingJob.media_item_id == media_item.id,
+                EncodingJob.id != job.id,
+                EncodingJob.status == "completed",
+            )
+        ).limit(1)
+        has_completed = (await session.execute(stmt_completed)).scalar_one_or_none()
+        if has_completed:
+            media_item.optimization_status = "optimized"
+            job.error_message = f"Superseded: Item was already optimized by Job #{has_completed}. {str(e)}"
+        else:
+            media_item.optimization_status = "failed"
+
         await session.commit()
 
         if os.path.exists(target_work_file):
@@ -433,7 +485,19 @@ async def report_job_failure(
     stmt_media = select(MediaItem).where(MediaItem.id == job.media_item_id)
     media_item = (await session.execute(stmt_media)).scalar_one_or_none()
     if media_item:
-        media_item.optimization_status = "failed"
+        stmt_completed = select(EncodingJob.id).where(
+            and_(
+                EncodingJob.media_item_id == media_item.id,
+                EncodingJob.id != job.id,
+                EncodingJob.status == "completed",
+            )
+        ).limit(1)
+        has_completed = (await session.execute(stmt_completed)).scalar_one_or_none()
+        if has_completed:
+            media_item.optimization_status = "optimized"
+            job.error_message = f"Superseded: Item was already optimized by Job #{has_completed}. {job.error_message}"
+        else:
+            media_item.optimization_status = "failed"
 
     await session.commit()
     await event_broadcaster.broadcast("job_status", {"id": job.id, "status": "failed"})

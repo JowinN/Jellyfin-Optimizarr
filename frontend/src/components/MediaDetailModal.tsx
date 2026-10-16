@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { X, Film, Volume2, Subtitles, Play, Calculator, ShieldCheck } from "lucide-react";
 import { MediaItem, EncodingProfile } from "../types";
 import { api } from "../api";
+import { useToast } from "../context/ToastContext";
 
 interface MediaDetailModalProps {
   media: MediaItem | null;
@@ -19,6 +20,7 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({
   onJobEnqueued,
 }) => {
   if (!media) return null;
+  const { toast } = useToast();
 
   const [selectedProfileId, setSelectedProfileId] = useState<number>(
     profiles.length > 0 ? profiles[0].id : 1
@@ -37,11 +39,11 @@ export const MediaDetailModal: React.FC<MediaDetailModalProps> = ({
         profile_id: selectedProfileId,
         replacement_mode: "replace_with_backup",
       });
-      alert(`Queued '${media.filename}' for optimization!`);
+      toast.success(`Queued '${media.filename}' for optimization!`);
       onJobEnqueued();
       onClose();
     } catch (err: any) {
-      alert("Error queueing job: " + err.message);
+      toast.error("Error queueing job: " + err.message);
     } finally {
       setIsQueueing(false);
     }

@@ -3,6 +3,7 @@ import { Play, XCircle, Gauge, Clock, Activity, Cpu, HardDrive, Zap } from "luci
 import { EncodingJob } from "../types";
 import { useSSE } from "../context/SSEContext";
 import { api } from "../api";
+import { useToast } from "../context/ToastContext";
 
 interface ActiveJobsBannerProps {
   activeJobs?: EncodingJob[];
@@ -15,6 +16,7 @@ export const ActiveJobsBanner: React.FC<ActiveJobsBannerProps> = ({
   activeJob,
   onJobCancelled,
 }) => {
+  const { toast } = useToast();
   const { liveJobProgress } = useSSE();
 
   // Normalize to an array of jobs
@@ -46,9 +48,10 @@ export const ActiveJobsBanner: React.FC<ActiveJobsBannerProps> = ({
     ) {
       try {
         await api.cancelJob(job.id);
+        toast.info(`Cancelled encoding Job #${job.id}`);
         if (onJobCancelled) onJobCancelled();
       } catch (err: any) {
-        alert("Failed to cancel job: " + err.message);
+        toast.error("Failed to cancel job: " + err.message);
       }
     }
   };
@@ -74,12 +77,13 @@ export const ActiveJobsBanner: React.FC<ActiveJobsBannerProps> = ({
             key={job.id}
             className="card animate-pulse-glow"
             style={{
-              border: "1px solid rgba(139, 92, 246, 0.4)",
-              background:
-                "linear-gradient(135deg, rgba(22, 18, 42, 0.92) 0%, rgba(13, 18, 31, 0.95) 100%)",
-              boxShadow: "0 8px 30px rgba(139, 92, 246, 0.2)",
+              border: "1px solid var(--border-highlight)",
+              background: "var(--surface-container)",
+              boxShadow: "var(--shadow-floating)",
+              marginBottom: "0.5rem",
             }}
           >
+            {/* Top Bar: Badges, Filename & Cancel Action */}
             <div
               style={{
                 display: "flex",
@@ -87,7 +91,7 @@ export const ActiveJobsBanner: React.FC<ActiveJobsBannerProps> = ({
                 justifyContent: "space-between",
                 flexWrap: "wrap",
                 gap: "0.75rem",
-                marginBottom: "0.85rem",
+                marginBottom: "1rem",
               }}
             >
               <div
@@ -96,15 +100,16 @@ export const ActiveJobsBanner: React.FC<ActiveJobsBannerProps> = ({
                   alignItems: "center",
                   gap: "0.65rem",
                   minWidth: 0,
-                  flex: "1 1 280px",
+                  flex: "1 1 300px",
                 }}
               >
                 <span
                   className="badge badge-purple"
                   style={{
-                    padding: "0.3rem 0.65rem",
+                    padding: "0.35rem 0.75rem",
                     flexShrink: 0,
                     fontWeight: 700,
+                    fontSize: "0.78rem",
                   }}
                 >
                   <Activity size={14} className="spin" /> Job #{job.id} • {job.stage.toUpperCase()}
@@ -115,9 +120,10 @@ export const ActiveJobsBanner: React.FC<ActiveJobsBannerProps> = ({
                     className="badge"
                     style={{
                       background: isGpu ? "rgba(16, 185, 129, 0.15)" : "rgba(6, 182, 212, 0.15)",
-                      color: isGpu ? "#34d399" : "#38bdf8",
+                      color: isGpu ? "var(--accent-emerald)" : "var(--accent-cyan)",
                       border: `1px solid ${isGpu ? "rgba(16, 185, 129, 0.3)" : "rgba(6, 182, 212, 0.3)"}`,
-                      fontSize: "0.7rem",
+                      fontSize: "0.72rem",
+                      fontWeight: 600,
                     }}
                   >
                     {isGpu ? <Zap size={12} /> : <Cpu size={12} />}
@@ -128,7 +134,7 @@ export const ActiveJobsBanner: React.FC<ActiveJobsBannerProps> = ({
                 <span
                   style={{
                     fontWeight: 700,
-                    fontSize: "0.94rem",
+                    fontSize: "0.98rem",
                     color: "var(--text-primary)",
                     overflow: "hidden",
                     textOverflow: "ellipsis",
@@ -144,61 +150,130 @@ export const ActiveJobsBanner: React.FC<ActiveJobsBannerProps> = ({
                 onClick={() => handleCancel(job)}
                 className="btn btn-danger btn-sm"
                 style={{ flexShrink: 0 }}
+                title="Safely stop encoding; media file remains untouched"
               >
                 <XCircle size={15} /> Cancel Encode
               </button>
             </div>
 
-            {/* Shimmer Progress Bar */}
-            <div className="progress-container" style={{ height: "10px", marginBottom: "0.85rem" }}>
-              <div className="progress-fill" style={{ width: `${progressPct}%` }} />
-            </div>
-
-            {/* Live Telemetry Grid */}
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
-                gap: "0.85rem",
-                fontSize: "0.82rem",
-                color: "var(--text-secondary)",
-                paddingTop: "0.2rem",
-              }}
-            >
-              <div>
-                <span style={{ color: "var(--text-muted)" }}>Progress: </span>
-                <strong style={{ color: "var(--accent-purple-light)", fontSize: "0.9rem" }}>
+            {/* High-Visibility Progress Bar Block */}
+            <div style={{ marginBottom: "1rem" }}>
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: "0.45rem",
+                  fontSize: "0.84rem",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "0.45rem", color: "var(--text-secondary)" }}>
+                  <div className="pulse-radar" style={{ width: "8px", height: "8px" }}>
+                    <span className="pulse-radar-dot" style={{ background: "var(--accent-emerald)" }} />
+                    <span className="pulse-radar-ring" style={{ borderColor: "var(--accent-emerald)" }} />
+                  </div>
+                  <span style={{ fontWeight: 600 }}>Active Transcode Progress</span>
+                </div>
+                <strong style={{ fontSize: "1.05rem", color: "var(--primary-light)", letterSpacing: "-0.01em" }}>
                   {progressPct.toFixed(1)}%
                 </strong>
               </div>
 
-              <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
-                <Gauge size={14} color="var(--accent-cyan)" />
-                <span>
-                  Speed:{" "}
-                  <strong style={{ color: "#fff" }}>
+              <div className="progress-container" style={{ height: "12px" }}>
+                <div
+                  className="progress-fill"
+                  style={{ width: `${Math.min(100, Math.max(0.5, progressPct))}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Live Telemetry Metric Tiles */}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+                gap: "0.75rem",
+                fontSize: "0.82rem",
+              }}
+            >
+              <div
+                style={{
+                  background: "var(--surface-container-high)",
+                  border: "1px solid var(--border-subtle)",
+                  borderRadius: "var(--radius-sm)",
+                  padding: "0.55rem 0.85rem",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.5rem",
+                }}
+              >
+                <Gauge size={16} color="var(--accent-cyan)" />
+                <div>
+                  <div style={{ fontSize: "0.68rem", color: "var(--text-muted)", textTransform: "uppercase", fontWeight: 700 }}>Speed</div>
+                  <strong style={{ color: "var(--text-primary)", fontSize: "0.92rem" }}>
                     {speed ? `${speed.toFixed(2)}x` : "1.0x"}
                   </strong>
-                </span>
+                </div>
               </div>
 
-              <div>
-                <span>
-                  Framerate:{" "}
-                  <strong style={{ color: "#fff" }}>
+              <div
+                style={{
+                  background: "var(--surface-container-high)",
+                  border: "1px solid var(--border-subtle)",
+                  borderRadius: "var(--radius-sm)",
+                  padding: "0.55rem 0.85rem",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.5rem",
+                }}
+              >
+                <Cpu size={16} color="var(--primary-light)" />
+                <div>
+                  <div style={{ fontSize: "0.68rem", color: "var(--text-muted)", textTransform: "uppercase", fontWeight: 700 }}>Framerate</div>
+                  <strong style={{ color: "var(--text-primary)", fontSize: "0.92rem" }}>
                     {fps ? `${Math.round(fps)} fps` : "--"}
                   </strong>
-                </span>
+                </div>
               </div>
 
-              <div style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
-                <Clock size={14} color="var(--accent-amber)" />
-                <span>
-                  ETA:{" "}
-                  <strong style={{ color: "var(--accent-amber)" }}>
+              <div
+                style={{
+                  background: "var(--surface-container-high)",
+                  border: "1px solid var(--border-subtle)",
+                  borderRadius: "var(--radius-sm)",
+                  padding: "0.55rem 0.85rem",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.5rem",
+                }}
+              >
+                <Clock size={16} color="var(--accent-amber)" />
+                <div>
+                  <div style={{ fontSize: "0.68rem", color: "var(--text-muted)", textTransform: "uppercase", fontWeight: 700 }}>ETA Remaining</div>
+                  <strong style={{ color: "var(--accent-amber)", fontSize: "0.92rem" }}>
                     {formatEta(etaSeconds)}
                   </strong>
-                </span>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  background: "var(--surface-container-high)",
+                  border: "1px solid var(--border-subtle)",
+                  borderRadius: "var(--radius-sm)",
+                  padding: "0.55rem 0.85rem",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.5rem",
+                }}
+              >
+                <HardDrive size={16} color="var(--accent-emerald)" />
+                <div>
+                  <div style={{ fontSize: "0.68rem", color: "var(--text-muted)", textTransform: "uppercase", fontWeight: 700 }}>Source Size</div>
+                  <strong style={{ color: "var(--text-primary)", fontSize: "0.92rem" }}>
+                    {job.source_size_bytes ? `${(job.source_size_bytes / (1024 * 1024)).toFixed(1)} MB` : "--"}
+                  </strong>
+                </div>
               </div>
             </div>
           </div>

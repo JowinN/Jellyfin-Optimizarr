@@ -128,22 +128,54 @@ class QueueWorker:
 
     async def _fetch_next_job(self) -> Optional[Dict[str, Any]]:
         async with AsyncSessionLocal() as session:
-            stmt = (
-                select(EncodingJob)
-                .where(
-                    and_(
-                        EncodingJob.status == "pending",
-                        EncodingJob.assigned_node_id.in_([None, "local", "any", ""]),
+            while True:
+                stmt = (
+                    select(EncodingJob)
+                    .where(
+                        and_(
+                            EncodingJob.status == "pending",
+                            EncodingJob.assigned_node_id.in_([None, "local", "any", ""]),
+                        )
                     )
+                    .order_by(EncodingJob.priority.desc(), EncodingJob.created_at.asc())
+                    .limit(1)
                 )
-                .order_by(EncodingJob.priority.desc(), EncodingJob.created_at.asc())
-                .limit(1)
-            )
-            res = await session.execute(stmt)
-            job = res.scalar_one_or_none()
-            if job:
+                res = await session.execute(stmt)
+                job = res.scalar_one_or_none()
+                if not job:
+                    return None
+
+                stmt_media = select(MediaItem).where(MediaItem.id == job.media_item_id)
+                media_item = (await session.execute(stmt_media)).scalar_one_or_none()
+                if not media_item:
+                    job.status = "cancelled"
+                    job.stage = "cancelled"
+                    job.error_message = "Stale job: media item not found"
+                    await session.commit()
+                    continue
+
+                stmt_completed = select(EncodingJob.id).where(
+                    and_(
+                        EncodingJob.media_item_id == media_item.id,
+                        EncodingJob.id != job.id,
+                        EncodingJob.status == "completed",
+                    )
+                ).limit(1)
+                completed_job_id = (await session.execute(stmt_completed)).scalar_one_or_none()
+
+                if completed_job_id or media_item.optimization_status == "optimized":
+                    logger.info(
+                        f"Skipping redundant pending local Job #{job.id} for '{media_item.filename}'. "
+                        f"Item was already completed by Job #{completed_job_id or 'earlier'}."
+                    )
+                    job.status = "cancelled"
+                    job.stage = "cancelled"
+                    job.error_message = f"Cancelled: Media item was already successfully optimized by earlier completed job #{completed_job_id or 'prior'}"
+                    media_item.optimization_status = "optimized"
+                    await session.commit()
+                    continue
+
                 return {"id": job.id}
-            return None
 
     async def _process_job(self, job_id: int):
         self._current_job_id = job_id
@@ -324,23 +356,38 @@ class QueueWorker:
                     job.status = "cancelled"
                     job.stage = "cancelled"
                     job.error_message = "Cancelled by user"
-                    media_item.optimization_status = "unoptimized"
+                    media_item.optimization_status = "optimized" if media_item.last_optimized_at else "unoptimized"
                     await session.commit()
                 else:
                     logger.error(f"Job {job.id} failed: {e}")
                     job.status = "failed"
                     job.stage = "failed"
                     job.error_message = str(e)
-                    media_item.optimization_status = "failed"
+
+                    stmt_completed = select(EncodingJob.id).where(
+                        and_(
+                            EncodingJob.media_item_id == media_item.id,
+                            EncodingJob.id != job.id,
+                            EncodingJob.status == "completed",
+                        )
+                    ).limit(1)
+                    has_completed = (await session.execute(stmt_completed)).scalar_one_or_none()
+                    if has_completed:
+                        media_item.optimization_status = "optimized"
+                        job.error_message = f"Superseded: Item was already optimized by Job #{has_completed}. {str(e)}"
+                    else:
+                        media_item.optimization_status = "failed"
+
                     await session.commit()
 
                     # Dispatch Failure Alert only on real failure
-                    await notification_service.send_alert(
-                        title="Encoding Job Failed",
-                        message=f"Failed to optimize '{media_item.filename}': {str(e)[:200]}",
-                        event_type="job_failed",
-                        priority="high",
-                    )
+                    if not has_completed:
+                        await notification_service.send_alert(
+                            title="Encoding Job Failed",
+                            message=f"Failed to optimize '{media_item.filename}': {str(e)[:200]}",
+                            event_type="job_failed",
+                            priority="high",
+                        )
 
                 # Cleanup partial temporary file
                 if os.path.exists(temp_output):

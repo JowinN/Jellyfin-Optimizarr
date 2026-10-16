@@ -15,9 +15,13 @@ import {
   Radio,
   Server,
   Zap,
+  Sun,
+  Moon,
+  Laptop,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useSSE } from "../context/SSEContext";
+import { useTheme } from "../context/ThemeContext";
 
 interface NavbarProps {
   currentTab: string;
@@ -36,6 +40,13 @@ export const Navbar: React.FC<NavbarProps> = ({
 }) => {
   const { user, logout } = useAuth();
   const { isConnected, scanProgress } = useSSE();
+  const { mode, resolvedTheme, setMode } = useTheme();
+
+  const handleCycleTheme = () => {
+    if (mode === "system") setMode("dark");
+    else if (mode === "dark") setMode("light");
+    else setMode("system");
+  };
 
   const navSections = [
     {
@@ -268,14 +279,33 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
           </div>
 
-          <button
-            onClick={logout}
-            title="Sign out"
-            className="btn btn-secondary btn-icon"
-            style={{ borderRadius: "8px" }}
-          >
-            <LogOut size={16} />
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+            <button
+              onClick={handleCycleTheme}
+              title={`Theme: ${mode.toUpperCase()} (Click to cycle)`}
+              className="btn btn-secondary btn-icon"
+              style={{ borderRadius: "var(--radius-sm)", padding: "0.45rem" }}
+              aria-label="Toggle theme mode"
+            >
+              {mode === "system" ? (
+                <Laptop size={15} />
+              ) : resolvedTheme === "dark" ? (
+                <Moon size={15} />
+              ) : (
+                <Sun size={15} />
+              )}
+            </button>
+
+            <button
+              onClick={logout}
+              title="Sign out"
+              className="btn btn-secondary btn-icon"
+              style={{ borderRadius: "var(--radius-sm)", padding: "0.45rem" }}
+              aria-label="Sign out"
+            >
+              <LogOut size={15} />
+            </button>
+          </div>
         </div>
       </aside>
     </>

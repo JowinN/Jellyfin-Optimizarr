@@ -16,9 +16,11 @@ import {
 } from "lucide-react";
 import { EncodingJob } from "../types";
 import { useSSE } from "../context/SSEContext";
+import { useToast } from "../context/ToastContext";
 import { api } from "../api";
 
 export const QueuePage: React.FC = () => {
+  const { toast } = useToast();
   const [jobs, setJobs] = useState<EncodingJob[]>([]);
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -70,12 +72,14 @@ export const QueuePage: React.FC = () => {
       if (isQueuePaused) {
         await api.resumeQueue();
         setIsQueuePaused(false);
+        toast.success("Queue processing resumed", "Queue Active");
       } else {
         await api.pauseQueue();
         setIsQueuePaused(true);
+        toast.info("Queue processing paused", "Queue Paused");
       }
     } catch (e: any) {
-      alert("Error: " + e.message);
+      toast.error("Error: " + e.message, "Queue Error");
     }
   };
 
@@ -83,9 +87,10 @@ export const QueuePage: React.FC = () => {
     if (confirm("Cancel this encoding job? The original media file will remain completely untouched.")) {
       try {
         await api.cancelJob(jobId);
+        toast.info("Job cancellation requested", "Job Cancelled");
         fetchJobs();
       } catch (e: any) {
-        alert("Failed to cancel: " + e.message);
+        toast.error("Failed to cancel: " + e.message, "Cancellation Error");
       }
     }
   };
@@ -93,18 +98,20 @@ export const QueuePage: React.FC = () => {
   const handleRetry = async (jobId: number) => {
     try {
       await api.retryJob(jobId);
+      toast.success("Job re-queued for processing", "Job Retried");
       fetchJobs();
     } catch (e: any) {
-      alert("Failed to retry: " + e.message);
+      toast.error("Failed to retry: " + e.message, "Retry Error");
     }
   };
 
   const handleClearCompleted = async () => {
     try {
       await api.clearCompleted();
+      toast.success("Completed jobs cleared from view", "Queue Cleaned");
       fetchJobs();
     } catch (e: any) {
-      alert("Failed to clear completed: " + e.message);
+      toast.error("Failed to clear completed: " + e.message, "Error");
     }
   };
 
@@ -112,9 +119,10 @@ export const QueuePage: React.FC = () => {
     if (confirm("Remove this job record from the queue?")) {
       try {
         await api.deleteJob(jobId);
+        toast.info("Job record removed", "Deleted");
         fetchJobs();
       } catch (e: any) {
-        alert("Failed to remove job: " + e.message);
+        toast.error("Failed to remove job: " + e.message, "Delete Error");
       }
     }
   };
@@ -127,9 +135,10 @@ export const QueuePage: React.FC = () => {
     ) {
       try {
         await api.clearAllJobs();
+        toast.success("Queue cleared successfully", "Queue Reset");
         fetchJobs();
       } catch (e: any) {
-        alert("Failed to clear queue: " + e.message);
+        toast.error("Failed to clear queue: " + e.message, "Error");
       }
     }
   };
@@ -339,8 +348,8 @@ export const QueuePage: React.FC = () => {
                               {speed ? `${speed.toFixed(1)}x` : ""} {fps ? `(${Math.round(fps)} fps)` : ""}
                             </span>
                           </div>
-                          <div className="progress-container" style={{ height: "6px" }}>
-                            <div className="progress-fill" style={{ width: `${pct}%` }} />
+                          <div className="progress-container" style={{ height: "8px" }}>
+                            <div className="progress-fill" style={{ width: `${Math.min(100, Math.max(1, pct))}%` }} />
                           </div>
                         </div>
                       ) : job.status === "completed" ? (
@@ -497,8 +506,8 @@ export const QueuePage: React.FC = () => {
                       </span>
                       <span>{speed ? `${speed.toFixed(2)}x` : ""}</span>
                     </div>
-                    <div className="progress-container" style={{ height: "6px" }}>
-                      <div className="progress-fill" style={{ width: `${pct}%` }} />
+                    <div className="progress-container" style={{ height: "8px" }}>
+                      <div className="progress-fill" style={{ width: `${Math.min(100, Math.max(1, pct))}%` }} />
                     </div>
                   </div>
                 )}

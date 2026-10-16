@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { X, Save, Sliders, Shield, Percent, Youtube, Info, Target, Sparkles } from "lucide-react";
 import { EncodingProfile } from "../types";
 import { api } from "../api";
+import { useToast } from "../context/ToastContext";
 
 interface ProfileEditorModalProps {
   profile?: EncodingProfile | null;
@@ -14,6 +15,7 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
   onClose,
   onSaved,
 }) => {
+  const { toast } = useToast();
   const isEditing = Boolean(profile && profile.id);
 
   const [formData, setFormData] = useState({
@@ -82,11 +84,11 @@ export const ProfileEditorModal: React.FC<ProfileEditorModalProps> = ({
       } else {
         await api.createProfile(payload);
       }
-      alert("Profile saved successfully!");
+      toast.success(isEditing ? "Profile updated successfully!" : "Profile created successfully!");
       onSaved();
       onClose();
     } catch (err: any) {
-      alert("Error saving profile: " + err.message);
+      toast.error("Error saving profile: " + err.message);
     } finally {
       setIsSaving(false);
     }

@@ -95,9 +95,25 @@ class AutomationService:
                 assigned_name = "Windows PC (Quadro K620)"
             elif rule.assigned_node_id == "local":
                 assigned_name = "Ubuntu Server (Local)"
+            elif rule.assigned_node_id == "any":
+                assigned_name = "Any Available Node"
 
         for item in matching_items:
+            # 1. Skip if marked optimized
             if item.optimization_status == "optimized":
+                completed_count += 1
+                continue
+
+            # 2. Check if a completed job already exists (self-healing)
+            stmt_completed = select(EncodingJob.id).where(
+                and_(
+                    EncodingJob.media_item_id == item.id,
+                    EncodingJob.status == "completed",
+                )
+            ).limit(1)
+            completed_job_id = (await session.execute(stmt_completed)).scalar_one_or_none()
+            if completed_job_id:
+                item.optimization_status = "optimized"
                 completed_count += 1
                 continue
 
@@ -112,15 +128,15 @@ class AutomationService:
                     completed_count += 1
                     continue
 
-            # Check if this item is unoptimized or failed and needs queueing
+            # Check if this item is unoptimized and needs queueing
             if item.optimization_status in ("unoptimized", "failed"):
-                # Ensure no pending/running job exists for this media item
-                stmt_existing = select(EncodingJob).where(
+                # Ensure no pending, running, or completed job exists for this media item
+                stmt_existing = select(EncodingJob.id).where(
                     and_(
                         EncodingJob.media_item_id == item.id,
-                        EncodingJob.status.in_(["pending", "running"]),
+                        EncodingJob.status.in_(["pending", "running", "completed"]),
                     )
-                )
+                ).limit(1)
                 existing_job = (await session.execute(stmt_existing)).scalar_one_or_none()
 
                 if not existing_job:
@@ -181,13 +197,13 @@ class AutomationService:
         if media_item.optimization_status not in ("unoptimized", "failed"):
             return None
 
-        # Check existing active queue job
-        stmt_existing = select(EncodingJob).where(
+        # Check existing active or completed queue job
+        stmt_existing = select(EncodingJob.id).where(
             and_(
                 EncodingJob.media_item_id == media_item.id,
-                EncodingJob.status.in_(["pending", "running"]),
+                EncodingJob.status.in_(["pending", "running", "completed"]),
             )
-        )
+        ).limit(1)
         if (await session.execute(stmt_existing)).scalar_one_or_none():
             return None
 

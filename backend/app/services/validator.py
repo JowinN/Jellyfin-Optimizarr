@@ -94,8 +94,12 @@ class OutputValidator:
                     f"by +{excess_mb:.1f} MB. Optimization rejected to prevent storage bloat."
                 )
             else:
+                target_mb_min = float(getattr(profile, "target_mb_per_minute", 0.0) or 0.0)
                 min_saving_pct = float(getattr(profile, "min_storage_saving_percent", 0.0) or 0.0)
-                if min_saving_pct > 0:
+                # When a target bit-budget is configured (target_mb_per_minute > 0), any size reduction (out_size < src_size)
+                # successfully normalizes the file to the target budget without storage bloat.
+                # Only enforce a minimum savings percentage threshold when no explicit rate budget is configured (e.g. CRF).
+                if target_mb_min <= 0 and min_saving_pct > 0:
                     actual_saving_pct = ((src_size - out_size) / src_size) * 100.0
                     if actual_saving_pct < min_saving_pct:
                         errors.append(

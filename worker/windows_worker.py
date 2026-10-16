@@ -16,6 +16,8 @@ import threading
 import urllib.request
 import urllib.error
 import urllib.parse
+import re
+import shutil
 from datetime import datetime
 
 if hasattr(sys.stdout, 'reconfigure'):
@@ -122,6 +124,9 @@ class WindowsTranscodeWorker:
         try:
             res = subprocess.run([self.ffmpeg_path, "-encoders"], capture_output=True, text=True)
             out = res.stdout
+            for enc in ["libsvtav1", "libaom-av1"]:
+                if enc in out:
+                    encoders.append(enc)
             for enc in ["av1_nvenc", "hevc_nvenc", "h264_nvenc"]:
                 if enc in out:
                     # Live hardware verification test
@@ -328,6 +333,23 @@ class WindowsTranscodeWorker:
             log(f"Job #{job_id} was cancelled; skipping upload.", Colors.YELLOW)
             return False
 
+    def upload_output_file(self, job_id: int, output_file: str) -> tuple[bool, str]:
+        """Uploads the completed file to the server for 6-point verification & replacement."""
+        if not os.path.exists(output_file):
+            return False, f"Output file does not exist: {output_file}"
+
+        # If output_file contains spaces, commas or special chars that confuse curl -F syntax,
+        # copy or link to a sanitized clean upload filename
+        clean_upload_file = os.path.join(self.temp_dir, f"upload_{job_id}.mkv")
+        target_upload_path = clean_upload_file
+        try:
+            if os.path.exists(clean_upload_file):
+                safe_remove(clean_upload_file)
+            shutil.copy2(output_file, clean_upload_file)
+        except Exception as copy_err:
+            log(f"Warning: could not create clean upload alias: {copy_err}. Using original path.", Colors.YELLOW)
+            target_upload_path = output_file
+
         url = f"{self.server_url}/api/nodes/jobs/{job_id}/upload"
         size_mb = os.path.getsize(output_file) / (1024 * 1024)
         log(f"Uploading optimized file to server ({size_mb:.1f} MB)...", Colors.CYAN)
@@ -337,7 +359,7 @@ class WindowsTranscodeWorker:
             "-s",
             "-S",
             "-X", "POST",
-            "-F", f"file=@{output_file}",
+            "-F", f"file=@{target_upload_path}",
             url,
         ]
         start_t = time.time()
@@ -345,12 +367,23 @@ class WindowsTranscodeWorker:
         elapsed = time.time() - start_t
         upload_speed = size_mb / max(0.1, elapsed)
 
+        # Clean up the sanitized copy
+        if target_upload_path != output_file:
+            safe_remove(target_upload_path)
+
         if res.returncode == 0 and "success" in res.stdout:
             log(f"Upload complete ({size_mb:.1f} MB in {elapsed:.1f}s @ {upload_speed:.1f} MB/s). Server validated and atomic replacement applied!", Colors.GREEN)
-            return True
+            return True, ""
         else:
-            log(f"Upload error: {res.stderr or res.stdout}", Colors.RED)
-            return False
+            err_msg = res.stderr or res.stdout or f"Curl returned exit code {res.returncode}"
+            try:
+                err_data = json.loads(res.stdout)
+                if "detail" in err_data:
+                    err_msg = err_data["detail"]
+            except Exception:
+                pass
+            log(f"Upload error: {err_msg}", Colors.RED)
+            return False, err_msg
 
     def build_ffmpeg_args(self, input_file: str, output_file: str, job_data: dict) -> list:
         profile = job_data.get("profile", {})
@@ -424,8 +457,14 @@ class WindowsTranscodeWorker:
         # Determine best available hardware or software encoder
         chosen_encoder = None
         if use_gpu and has_nvenc:
-            if codec in ("av1", "youtube"):
-                # Prefer GPU AV1, then HEVC NVENC, then H.264 NVENC hardware acceleration
+            if codec == "h264":
+                if "h264_nvenc" in self.supported_encoders:
+                    chosen_encoder = "h264_nvenc"
+            elif codec == "av1":
+                # Strict AV1: only use GPU if card has dedicated AV1 encoder, otherwise SVT-AV1 on CPU
+                if "av1_nvenc" in self.supported_encoders:
+                    chosen_encoder = "av1_nvenc"
+            elif codec == "youtube":
                 if "av1_nvenc" in self.supported_encoders:
                     chosen_encoder = "av1_nvenc"
                 elif "hevc_nvenc" in self.supported_encoders:
@@ -475,7 +514,7 @@ class WindowsTranscodeWorker:
             if "libsvtav1" in self.supported_encoders:
                 cmd.extend(["-c:v", "libsvtav1", "-preset", "6"])
             elif "libaom-av1" in self.supported_encoders:
-                cmd.extend(["-c:v", "libaom-av1"])
+                cmd.extend(["-c:v", "libaom-av1", "-cpu-used", "6", "-row-mt", "1", "-tiles", "2x2"])
             else:
                 cmd.extend(["-c:v", "libx265", "-preset", "faster"])
             if target_bitrate > 0:
@@ -521,8 +560,8 @@ class WindowsTranscodeWorker:
         # Audio Configuration
         # YouTube & AV1 presets strictly use Opus high-efficiency audio
         if codec in ("youtube", "av1") or profile.get("preferred_audio_codec") == "opus":
-            log(f"Transcoding audio to Opus @ {audio_kbps}k (high efficiency standard).", Colors.GREEN)
-            cmd.extend(["-map", "0:a?", "-c:a", "libopus", "-b:a", f"{audio_kbps}k"])
+            log(f"Transcoding audio to Opus @ {audio_kbps}k (high efficiency stereo).", Colors.GREEN)
+            cmd.extend(["-map", "0:a?", "-c:a", "libopus", "-ac", "2", "-b:a", f"{audio_kbps}k"])
         else:
             # Audio Preservation: map all audio tracks, retain untouched lossless/surround
             cmd.extend(["-map", "0:a?", "-c:a", "copy"])
@@ -569,7 +608,8 @@ class WindowsTranscodeWorker:
 
             # 2. Output destination path
             base, ext = os.path.splitext(filename)
-            output_local = os.path.join(self.temp_dir, f"encoded_{job_id}_{base}.mkv")
+            safe_base = re.sub(r"[^\w\.-]", "_", base)[:50]
+            output_local = os.path.join(self.temp_dir, f"encoded_{job_id}_{safe_base}.mkv")
 
             # 3. Build FFmpeg command
             cmd = self.build_ffmpeg_args(source_local, output_local, job)
@@ -693,11 +733,11 @@ class WindowsTranscodeWorker:
             log(f"Local transcode complete! Output size: {out_size / (1024*1024):.1f} MB (Saved {saved_mb:.1f} MB / {pct_saved:.1f}%)", Colors.GREEN)
 
             # 5. Upload completed file to server for 6-point verification & atomic replacement
-            upload_ok = self.upload_output_file(job_id, output_local)
+            upload_ok, upload_err = self.upload_output_file(job_id, output_local)
             if not upload_ok:
                 if self._flag_job_cancelled:
                     raise JobCancelledException(f"Job #{job_id} was cancelled during upload.")
-                raise RuntimeError("Failed to upload completed file to server.")
+                raise RuntimeError(f"Server rejected upload: {upload_err}")
 
             log(f"{Colors.BOLD}=== Job #{job_id} Finished Successfully! ==={Colors.RESET}\n", Colors.GREEN)
 
@@ -766,7 +806,8 @@ class WindowsTranscodeWorker:
                             _single_instance_socket.close()
                         except Exception:
                             pass
-                    os.execv(sys.executable, [sys.executable] + sys.argv)
+                    subprocess.Popen([sys.executable] + sys.argv)
+                    sys.exit(0)
 
                 poll_res = self.poll_for_job()
                 if poll_res.get("has_job"):

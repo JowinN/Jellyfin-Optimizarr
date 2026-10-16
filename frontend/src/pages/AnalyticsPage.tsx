@@ -105,7 +105,7 @@ export const AnalyticsPage: React.FC = () => {
               const totalItems = data.total_files || 1;
               const pct = ((c.count / totalItems) * 100).toFixed(1);
               return (
-                <div key={c.codec} style={{ background: "rgba(30, 41, 59, 0.4)", padding: "0.85rem", borderRadius: "var(--radius-md)" }}>
+                <div key={c.codec} style={{ background: "var(--surface-container-high)", border: "1px solid var(--border-subtle)", padding: "0.85rem", borderRadius: "var(--radius-md)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.3rem" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                       <span className="badge badge-cyan">{c.codec.toUpperCase()}</span>
@@ -113,8 +113,8 @@ export const AnalyticsPage: React.FC = () => {
                     </div>
                     <strong>{formatBytes(c.total_size_bytes)}</strong>
                   </div>
-                  <div className="progress-container" style={{ height: "4px" }}>
-                    <div className="progress-fill" style={{ width: `${pct}%` }} />
+                  <div className="progress-container" style={{ height: "7px" }}>
+                    <div className="progress-fill" style={{ width: `${Math.min(100, Math.max(1, Number(pct)))}%` }} />
                   </div>
                 </div>
               );
@@ -163,13 +163,13 @@ export const AnalyticsPage: React.FC = () => {
             {data?.libraries.map((l) => {
               const optPct = l.total_files > 0 ? Math.round((l.optimized_files / l.total_files) * 100) : 0;
               return (
-                <div key={l.library} style={{ background: "rgba(30, 41, 59, 0.4)", padding: "0.75rem 0.85rem", borderRadius: "var(--radius-md)", border: "1px solid rgba(255, 255, 255, 0.04)" }}>
+                <div key={l.library} style={{ background: "var(--surface-container-high)", padding: "0.75rem 0.85rem", borderRadius: "var(--radius-md)", border: "1px solid var(--border-subtle)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.3rem" }}>
                     <span className="badge badge-purple" style={{ textTransform: "capitalize" }}>{l.library}</span>
                     <strong style={{ fontSize: "0.9rem" }}>{formatBytes(l.total_source_bytes)}</strong>
                   </div>
-                  <div className="progress-container" style={{ height: "5px", margin: "0.35rem 0" }}>
-                    <div className="progress-fill" style={{ width: `${optPct}%` }} />
+                  <div className="progress-container" style={{ height: "7px", margin: "0.45rem 0" }}>
+                    <div className="progress-fill" style={{ width: `${Math.min(100, Math.max(1, optPct))}%` }} />
                   </div>
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.75rem", color: "var(--text-muted)" }}>
                     <span style={{ color: "var(--accent-emerald)" }}>{l.optimized_files} / {l.total_files} optimized ({optPct}%)</span>

@@ -6,6 +6,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>Jellyfin Media Optimizer | Storage Compression & Library Management</title>
     <meta name="description" content="Production-grade self-hosted media compression and library management platform for Jellyfin." />
+    <meta name="color-scheme" content="light dark" />
+    <script>
+      (function() {
+        try {
+          var mode = localStorage.getItem('jmo_theme_mode') || 'system';
+          var preset = localStorage.getItem('jmo_theme_preset') || 'purple';
+          var density = localStorage.getItem('jmo_theme_density') || 'comfortable';
+          var corners = localStorage.getItem('jmo_theme_corners') || 'rounded';
+          var isDark = mode === 'dark' || (mode === 'system' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          var root = document.documentElement;
+          root.setAttribute('data-theme', isDark ? 'dark' : 'light');
+          root.setAttribute('data-theme-mode', mode);
+          root.setAttribute('data-preset', preset);
+          root.setAttribute('data-density', density);
+          root.setAttribute('data-corners', corners);
+          var meta = document.querySelector('meta[name="color-scheme"]');
+          if (meta) meta.content = isDark ? 'dark' : 'light';
+        } catch(e) {}
+      })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">

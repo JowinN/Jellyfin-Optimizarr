@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { AnalyticsOverview, EncodingJob, MediaItem, ClusterNode } from "../types";
 import { ActiveJobsBanner } from "../components/ActiveJobsBanner";
+import { useToast } from "../context/ToastContext";
 import { api } from "../api";
 
 interface DashboardProps {
@@ -26,6 +27,7 @@ interface DashboardProps {
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenMediaDetail }) => {
+  const { toast } = useToast();
   const [overview, setOverview] = useState<AnalyticsOverview | null>(null);
   const [activeJobs, setActiveJobs] = useState<EncodingJob[]>([]);
   const [candidates, setCandidates] = useState<any[]>([]);
@@ -63,10 +65,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenMediaDet
     try {
       setIsScanning(true);
       await api.triggerScan({ force_rescan: false });
-      alert("Library scan started in background. New files and storage changes will sync automatically.");
+      toast.info("Library scan started in background. New files and storage changes will sync automatically.", "Scan Started");
       setTimeout(fetchDashboardData, 3000);
     } catch (e: any) {
-      alert("Scan trigger error: " + e.message);
+      toast.error("Scan trigger error: " + e.message, "Scan Error");
     } finally {
       setIsScanning(false);
     }
@@ -483,11 +485,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ onNavigate, onOpenMediaDet
                       </strong>
                     </div>
 
-                    <div className="progress-container" style={{ height: "7px" }}>
+                    <div className="progress-container" style={{ height: "8px" }}>
                       <div
                         className="progress-fill"
                         style={{
-                          width: `${optPercent}%`,
+                          width: `${Math.min(100, Math.max(1, optPercent))}%`,
                           background: "linear-gradient(90deg, #10b981 0%, #06b6d4 100%)",
                         }}
                       />

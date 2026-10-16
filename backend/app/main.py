@@ -70,10 +70,10 @@ app = FastAPI(
     openapi_url="/api/openapi.json",
 )
 
-# Enable CORS for local Vite development and Docker integration
+# Enable CORS for web UI, Vite dev server, and distributed cluster nodes
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origin_regex=r"^https?://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

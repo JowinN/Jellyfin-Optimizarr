@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 from typing import List, Optional
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     # Application & Environment
@@ -63,7 +63,7 @@ class Settings(BaseSettings):
     # Worker Settings
     MAX_CONCURRENT_ENCODES: int = int(os.getenv("MAX_CONCURRENT_ENCODES", "1"))
     FFMPEG_THREADS: int = int(os.getenv("FFMPEG_THREADS", "0"))
-    DEFAULT_REPLACEMENT_MODE: str = os.getenv("DEFAULT_REPLACEMENT_MODE", "replace_with_backup")
+    DEFAULT_REPLACEMENT_MODE: str = os.getenv("DEFAULT_REPLACEMENT_MODE", "in_place")
     BACKUP_RETENTION_DAYS: int = int(os.getenv("BACKUP_RETENTION_DAYS", "14"))
 
     # Hardware Acceleration
@@ -90,9 +90,10 @@ class Settings(BaseSettings):
     SMTP_TO: str = os.getenv("SMTP_TO", "")
     SMTP_USE_TLS: bool = os.getenv("SMTP_USE_TLS", "true").lower() in ("true", "1", "yes")
 
-    class Config:
-        case_sensitive = True
-        env_file = ".env"
-        extra = "allow"
+    model_config = SettingsConfigDict(
+        case_sensitive=True,
+        env_file=".env",
+        extra="allow",
+    )
 
 settings = Settings()

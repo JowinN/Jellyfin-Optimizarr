@@ -102,8 +102,69 @@ class ReplacementManager:
                 None,
             )
 
-        # 5. Replacement Mode: OPTIMIZED COPY
-        if replacement_mode == "optimized_copy":
+        # 5. Replacement Mode: IN-PLACE DIRECT REPLACEMENT (No persistent backup kept)
+        if replacement_mode in ("in_place", "inplace", "direct"):
+            temp_swap = f"{source_path}.transact_swap_{job_id}"
+            try:
+                # 1. Safely stage original to temporary swap in case move fails
+                shutil.move(source_path, temp_swap)
+                logger.info(f"Staged original to swap for in-place replacement: {temp_swap}")
+
+                # 2. Move optimized file into target location
+                shutil.move(temp_encoded_path, source_path)
+                logger.info(f"Installed optimized file in-place: {source_path}")
+
+                # 3. Verify target file exists and has correct size
+                if not os.path.exists(source_path) or os.path.getsize(source_path) != optimized_size:
+                    raise RuntimeError("In-place replacement verification failed: target file missing or size mismatch.")
+
+                # 4. Set appropriate permissions matching PUID/PGID
+                try:
+                    os.chown(source_path, settings.PUID, settings.PGID)
+                except (AttributeError, PermissionError, OSError):
+                    pass
+
+                # 5. CRITICAL: Permanently remove the temporary swap file (NO BACKUP KEPT)
+                if os.path.exists(temp_swap):
+                    try:
+                        os.remove(temp_swap)
+                        logger.info(f"In-place replacement verified. Permanently purged swap file: {temp_swap}")
+                    except OSError as e:
+                        logger.warning(f"Could not remove temp swap file {temp_swap}: {e}")
+
+                # 6. Audit Log
+                audit = AuditLog(
+                    event_type="in_place_replacement",
+                    target_path=source_path,
+                    details={
+                        "original_size": pre_encode_size,
+                        "optimized_size": optimized_size,
+                        "saved_bytes": pre_encode_size - optimized_size,
+                        "mode": "in_place",
+                    },
+                )
+                session.add(audit)
+                await session.commit()
+
+                # 7. Trigger Jellyfin item refresh
+                if media_item.jellyfin_item_id:
+                    asyncio.create_task(jellyfin_client.refresh_item(media_item.jellyfin_item_id))
+
+                return True, "Replaced in-place directly without backup.", None
+
+            except Exception as e:
+                logger.error(f"Error during in-place file replacement: {e}")
+                # Safe recovery: if original was moved to swap but target failed, restore original!
+                if os.path.exists(temp_swap) and not os.path.exists(source_path):
+                    try:
+                        shutil.move(temp_swap, source_path)
+                        logger.warning("Restored original file from transaction swap after in-place replacement failure.")
+                    except Exception as restore_err:
+                        logger.critical(f"Failed to restore original file from swap: {restore_err}")
+                return False, f"In-place replacement error: {str(e)}", None
+
+        # 6. Replacement Mode: OPTIMIZED COPY
+        elif replacement_mode == "optimized_copy":
             root, ext = os.path.splitext(source_path)
             copy_path = f"{root}.optimized{ext}"
             shutil.copy2(temp_encoded_path, copy_path)
@@ -119,12 +180,12 @@ class ReplacementManager:
             await session.commit()
             return True, "Optimized copy created successfully.", None
 
-        # 5. Replacement Mode: MANUAL APPROVAL
+        # 7. Replacement Mode: MANUAL APPROVAL
         elif replacement_mode == "manual_approval":
             logger.info(f"Job {job_id} awaiting manual approval before replacing {source_path}")
             return True, "Encoding complete. Awaiting manual confirmation.", None
 
-        # 6. Replacement Mode: REPLACE WITH BACKUP (Default & Safest)
+        # 8. Replacement Mode: REPLACE WITH BACKUP (Default & Safest)
         else:
             # Prepare backup directory path structure
             timestamp_str = datetime.utcnow().strftime("%Y%m%d_%H%M%S")

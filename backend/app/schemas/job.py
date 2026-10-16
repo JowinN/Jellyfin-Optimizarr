@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 class JobCreate(BaseModel):
     media_item_id: int
     profile_id: int
-    replacement_mode: str = "replace_with_backup"  # replace_with_backup, optimized_copy, manual_approval
+    replacement_mode: str = "in_place"  # in_place, safe_backup, replace_with_backup, optimized_copy, manual_approval
     priority: int = 10
     is_dry_run: bool = False
     assigned_node_id: Optional[str] = None
@@ -13,7 +13,7 @@ class JobCreate(BaseModel):
 class JobBatchCreate(BaseModel):
     media_item_ids: List[int] = Field(..., min_length=1)
     profile_id: int
-    replacement_mode: str = "replace_with_backup"
+    replacement_mode: str = "in_place"
     priority: int = 10
     is_dry_run: bool = False
     assigned_node_id: Optional[str] = None

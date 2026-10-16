@@ -68,7 +68,21 @@ async def enqueue_job(
     )
     existing_job = (await session.execute(stmt_existing)).scalar_one_or_none()
     if existing_job:
-        raise HTTPException(status_code=400, detail=f"Job {existing_job.id} is already queued or running for this file")
+        raise HTTPException(status_code=400, detail=f"Job #{existing_job.id} is already queued or running for this file")
+
+    # Prevent enqueuing if already optimized
+    stmt_completed = select(EncodingJob.id).where(
+        and_(
+            EncodingJob.media_item_id == req.media_item_id,
+            EncodingJob.status == "completed",
+        )
+    ).limit(1)
+    has_completed = (await session.execute(stmt_completed)).scalar_one_or_none()
+    if (has_completed or media_item.optimization_status == "optimized") and not getattr(req, "force", False):
+        raise HTTPException(
+            status_code=400,
+            detail=f"This file was already optimized (Job #{has_completed or 'earlier'}). Pass force=true to re-encode.",
+        )
 
     # Validate profile
     stmt_prof = select(EncodingProfile).where(EncodingProfile.id == req.profile_id)
@@ -118,13 +132,17 @@ async def enqueue_batch(
         if not media_item:
             continue
 
-        # Skip if already queued
-        stmt_existing = select(EncodingJob).where(
+        # Skip if already optimized
+        if media_item.optimization_status == "optimized":
+            continue
+
+        # Skip if already completed or actively queued/running
+        stmt_existing = select(EncodingJob.id).where(
             and_(
                 EncodingJob.media_item_id == mid,
-                EncodingJob.status.in_(["pending", "running"]),
+                EncodingJob.status.in_(["pending", "running", "completed"]),
             )
-        )
+        ).limit(1)
         if (await session.execute(stmt_existing)).scalar_one_or_none():
             continue
 
@@ -174,7 +192,7 @@ async def cancel_job(
     stmt_media = select(MediaItem).where(MediaItem.id == job.media_item_id)
     item = (await session.execute(stmt_media)).scalar_one_or_none()
     if item and item.optimization_status in ("queued", "processing"):
-        item.optimization_status = "unoptimized"
+        item.optimization_status = "optimized" if item.last_optimized_at else "unoptimized"
 
     await session.commit()
     await event_broadcaster.broadcast("job_status", {
@@ -196,6 +214,21 @@ async def retry_job(
     job = (await session.execute(stmt)).scalar_one_or_none()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+
+    # Check if media item has already completed via another job
+    stmt_completed = select(EncodingJob.id).where(
+        and_(
+            EncodingJob.media_item_id == job.media_item_id,
+            EncodingJob.id != job.id,
+            EncodingJob.status == "completed",
+        )
+    ).limit(1)
+    has_completed = (await session.execute(stmt_completed)).scalar_one_or_none()
+    if has_completed:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot retry Job #{job_id}: Media item was already successfully optimized by Job #{has_completed}.",
+        )
 
     job.status = "pending"
     job.stage = "queued"

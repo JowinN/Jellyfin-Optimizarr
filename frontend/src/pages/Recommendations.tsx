@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Sparkles, Play, CheckSquare, Square, RefreshCw, Calculator, TrendingDown } from "lucide-react";
 import { EncodingProfile } from "../types";
+import { useToast } from "../context/ToastContext";
 import { api } from "../api";
 
 interface RecommendationsProps {
@@ -14,6 +15,7 @@ export const Recommendations: React.FC<RecommendationsProps> = ({
   onOpenDryRun,
   onNavigateToQueue,
 }) => {
+  const { toast } = useToast();
   const [candidates, setCandidates] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [libraryFilter, setLibraryFilter] = useState("");
@@ -63,10 +65,10 @@ export const Recommendations: React.FC<RecommendationsProps> = ({
         profile_id: selectedProfileId,
         replacement_mode: "replace_with_backup",
       });
-      alert(`Queued ${selectedIds.length} candidate files for optimization!`);
+      toast.success(`Queued ${selectedIds.length} candidate files for optimization!`, "Candidates Queued");
       onNavigateToQueue();
     } catch (err: any) {
-      alert("Error queueing candidates: " + err.message);
+      toast.error("Error queueing candidates: " + err.message, "Queue Error");
     } finally {
       setIsQueueing(false);
     }

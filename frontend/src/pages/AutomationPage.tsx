@@ -32,6 +32,7 @@ import {
 } from "../types";
 import { api } from "../api";
 import { useSSE } from "../context/SSEContext";
+import { useToast } from "../context/ToastContext";
 
 interface AutomationPageProps {
   profiles: EncodingProfile[];
@@ -42,6 +43,7 @@ export const AutomationPage: React.FC<AutomationPageProps> = ({
   profiles,
   onNavigateToQueue,
 }) => {
+  const { toast } = useToast();
   const { isConnected } = useSSE();
   const [rules, setRules] = useState<AutomationRule[]>([]);
   const [seriesList, setSeriesList] = useState<AutomationSeries[]>([]);
@@ -149,20 +151,22 @@ export const AutomationPage: React.FC<AutomationPageProps> = ({
   const handleSaveRule = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formName.trim()) {
-      alert("Please enter a rule name.");
+      toast.warning("Please enter a rule name.");
       return;
     }
 
     const seriesFinal = formCustomSeriesInput.trim() || formTargetSeriesName;
     if (formScopeType === "series" && !seriesFinal) {
-      alert("Please select or type a series name.");
+      toast.warning("Please select or type a series name.");
       return;
     }
 
     setIsSaving(true);
     try {
       const selectedNode = nodes.find((n) => n.node_id === formAssignedNodeId);
-      const assignedNodeName = selectedNode ? selectedNode.name : (formAssignedNodeId === "windows-node" ? "Windows PC (Quadro K620)" : "Ubuntu Server (Local)");
+      const assignedNodeName = formAssignedNodeId === "any"
+        ? "Any Available Node (Fleet Auto-Balance)"
+        : (selectedNode ? selectedNode.name : (formAssignedNodeId === "windows-node" ? "Windows PC (Quadro K620 GPU / i5 CPU)" : "Ubuntu Server (Local)"));
 
       if (editingRule) {
         const updatePayload: AutomationRuleUpdate = {
@@ -180,6 +184,7 @@ export const AutomationPage: React.FC<AutomationPageProps> = ({
           auto_encode_existing: formAutoEncodeExisting,
         };
         await api.updateAutomationRule(editingRule.id, updatePayload);
+        toast.success(`Updated rule "${formName}"`);
         setFeedbackMessage(`Updated rule "${formName}"`);
       } else {
         const createPayload: AutomationRuleCreate = {
@@ -197,13 +202,14 @@ export const AutomationPage: React.FC<AutomationPageProps> = ({
           auto_encode_existing: formAutoEncodeExisting,
         };
         const created = await api.createAutomationRule(createPayload);
+        toast.success(`Created automation rule "${created.name}"!`);
         setFeedbackMessage(`Created automation rule "${created.name}"!`);
       }
 
       setIsModalOpen(false);
       await fetchData();
     } catch (err: any) {
-      alert("Error saving rule: " + (err.message || String(err)));
+      toast.error("Error saving rule: " + (err.message || String(err)));
     } finally {
       setIsSaving(false);
     }
@@ -215,8 +221,9 @@ export const AutomationPage: React.FC<AutomationPageProps> = ({
       setRules((prev) =>
         prev.map((r) => (r.id === rule.id ? { ...r, is_active: !r.is_active } : r))
       );
+      toast.info(`Rule "${rule.name}" is now ${!rule.is_active ? "active" : "paused"}`);
     } catch (e: any) {
-      alert("Failed to toggle rule: " + e.message);
+      toast.error("Failed to toggle rule: " + e.message);
     }
   };
 
@@ -225,9 +232,10 @@ export const AutomationPage: React.FC<AutomationPageProps> = ({
     try {
       await api.deleteAutomationRule(rule.id);
       setRules((prev) => prev.filter((r) => r.id !== rule.id));
+      toast.success(`Deleted rule "${rule.name}"`);
       setFeedbackMessage(`Deleted rule "${rule.name}"`);
     } catch (e: any) {
-      alert("Failed to delete rule: " + e.message);
+      toast.error("Failed to delete rule: " + e.message);
     }
   };
 
@@ -235,10 +243,11 @@ export const AutomationPage: React.FC<AutomationPageProps> = ({
     setRunningRuleId(rule.id);
     try {
       const res = await api.runAutomationRule(rule.id);
+      toast.success(res.message);
       setFeedbackMessage(res.message);
       await fetchData();
     } catch (e: any) {
-      alert("Error executing rule: " + e.message);
+      toast.error("Error executing rule: " + e.message);
     } finally {
       setRunningRuleId(null);
     }
@@ -249,12 +258,13 @@ export const AutomationPage: React.FC<AutomationPageProps> = ({
     try {
       const results = await api.evaluateAllAutomation();
       const totalQueued = results.reduce((acc, r) => acc + r.queued_jobs, 0);
+      toast.success(`Automated evaluation complete: ${totalQueued} new optimization job(s) queued across ${results.length} active rule(s).`);
       setFeedbackMessage(
         `Automated evaluation complete: ${totalQueued} new optimization job(s) queued across ${results.length} active rule(s).`
       );
       await fetchData();
     } catch (e: any) {
-      alert("Error running evaluation: " + e.message);
+      toast.error("Error running evaluation: " + e.message);
     } finally {
       setIsEvaluatingAll(false);
     }
@@ -1099,8 +1109,9 @@ export const AutomationPage: React.FC<AutomationPageProps> = ({
                       fontSize: "0.85rem",
                     }}
                   >
-                    <option value="windows-node">Windows PC (Quadro K620 GPU)</option>
-                    <option value="local">Ubuntu Server (Local CPU/GPU)</option>
+                    <option value="any">🔄 Any Available Node (Cluster Load Balancing)</option>
+                    <option value="windows-node">🖥️ Windows PC (Quadro K620 GPU / i5 CPU)</option>
+                    <option value="local">🐧 Ubuntu Server (Local CPU / iGPU)</option>
                     {nodes
                       .filter((n) => n.node_id !== "windows-node" && n.node_id !== "local")
                       .map((n) => (
