@@ -76,18 +76,26 @@ class QueueWorker:
         return False
 
     async def recover_interrupted_jobs(self):
-        """Scans for jobs left in 'running', 'probing', or 'validating' on startup and safely fails them."""
+        """Scans for local jobs left in 'running', 'probing', or 'validating' on startup and safely resets them."""
         async with AsyncSessionLocal() as session:
             stmt = select(EncodingJob).where(
-                EncodingJob.status.in_(["running", "probing", "validating", "replacing"])
+                and_(
+                    EncodingJob.status.in_(["running", "probing", "validating", "replacing"]),
+                    EncodingJob.assigned_node_id.in_([None, "local", "any", ""]),
+                )
             )
             res = await session.execute(stmt)
             jobs = res.scalars().all()
             for job in jobs:
-                job.status = "failed"
-                job.stage = "interrupted"
-                job.error_message = "Job interrupted by container restart or sudden shutdown. Original file preserved."
-                logger.warning(f"Recovered interrupted job {job.id}. Set status to failed.")
+                job.status = "pending"
+                job.stage = "queued"
+                job.progress_percent = 0.0
+                job.current_fps = 0.0
+                job.current_speed = 0.0
+                job.eta_seconds = 0
+                job.out_time_seconds = 0.0
+                job.error_message = None
+                logger.warning(f"Recovered interrupted local job {job.id}. Reset status to pending for clean retry.")
 
                 # Clean up any leftover temporary file in /work
                 if job.temp_output_path and os.path.exists(job.temp_output_path):
@@ -342,6 +350,13 @@ class QueueWorker:
                         pass
 
             finally:
+                # Ensure active process is cleanly terminated if job errored or crashed
+                if self._current_process and self._current_process.returncode is None:
+                    try:
+                        logger.warning(f"Terminating active process for Job {job_id} on worker cleanup.")
+                        self._current_process.terminate()
+                    except Exception:
+                        pass
                 self._current_job_id = None
                 self._cancelled_job_id = None
                 self._current_process = None
@@ -355,57 +370,84 @@ class QueueWorker:
         out_time_s = 0.0
         fps_val = 0.0
         speed_val = 1.0
+        last_commit_time = 0.0
 
-        while self._current_process.returncode is None:
-            line = await self._current_process.stdout.readline()
-            if not line:
-                break
+        # Background task to continuously drain stderr so OS pipe buffer never deadlocks FFmpeg
+        async def _drain_stderr():
+            if self._current_process and self._current_process.stderr:
+                try:
+                    while self._current_process and self._current_process.returncode is None:
+                        line = await self._current_process.stderr.readline()
+                        if not line:
+                            break
+                except Exception:
+                    pass
 
-            decoded = line.decode("utf-8", errors="ignore").strip()
-            if "=" in decoded:
-                key, val = decoded.split("=", 1)
-                key = key.strip()
-                val = val.strip()
+        stderr_task = asyncio.create_task(_drain_stderr())
 
-                if key == "out_time_ms":
-                    try:
-                        out_time_s = float(val) / 1000000.0
-                    except ValueError:
-                        pass
-                elif key == "fps":
-                    try:
-                        fps_val = float(val)
-                    except ValueError:
-                        pass
-                elif key == "speed":
-                    val_str = val.replace("x", "").strip()
-                    try:
-                        speed_val = float(val_str)
-                    except ValueError:
-                        pass
-                elif key == "progress" and val in ("continue", "end"):
-                    # Calculate progress percentage & ETA
-                    if total_duration_seconds > 0:
-                        pct = min(99.0, (out_time_s / total_duration_seconds) * 100.0)
-                        remaining_s = max(0, total_duration_seconds - out_time_s)
-                        eta_s = int(remaining_s / speed_val) if speed_val > 0 else 0
-                    else:
-                        pct = 0.0
-                        eta_s = 0
+        try:
+            while self._current_process and self._current_process.returncode is None:
+                line = await self._current_process.stdout.readline()
+                if not line:
+                    break
 
-                    job.progress_percent = round(pct, 1)
-                    job.current_fps = fps_val
-                    job.current_speed = speed_val
-                    job.eta_seconds = eta_s
-                    job.out_time_seconds = round(out_time_s, 1)
+                decoded = line.decode("utf-8", errors="ignore").strip()
+                if "=" in decoded:
+                    key, val = decoded.split("=", 1)
+                    key = key.strip()
+                    val = val.strip()
 
-                    await session.commit()
-                    await event_broadcaster.broadcast("job_progress", {
-                        "id": job.id,
-                        "progress": job.progress_percent,
-                        "fps": job.current_fps,
-                        "speed": job.current_speed,
-                        "eta_seconds": job.eta_seconds,
-                    })
+                    if key == "out_time_ms":
+                        try:
+                            out_time_s = float(val) / 1000000.0
+                        except ValueError:
+                            pass
+                    elif key == "fps":
+                        try:
+                            fps_val = float(val)
+                        except ValueError:
+                            pass
+                    elif key == "speed":
+                        val_str = val.replace("x", "").strip()
+                        try:
+                            speed_val = float(val_str)
+                        except ValueError:
+                            pass
+                    elif key == "progress" and val in ("continue", "end"):
+                        now = asyncio.get_event_loop().time()
+                        # Throttle DB commits to every 3.0s or on finish to avoid SQLite lock contention
+                        if (now - last_commit_time >= 3.0) or val == "end":
+                            last_commit_time = now
+                            if total_duration_seconds > 0:
+                                pct = min(99.0, (out_time_s / total_duration_seconds) * 100.0)
+                                remaining_s = max(0, total_duration_seconds - out_time_s)
+                                eta_s = int(remaining_s / speed_val) if speed_val > 0 else 0
+                            else:
+                                pct = 0.0
+                                eta_s = 0
+
+                            job.progress_percent = round(pct, 1)
+                            job.current_fps = fps_val
+                            job.current_speed = speed_val
+                            job.eta_seconds = eta_s
+                            job.out_time_seconds = round(out_time_s, 1)
+
+                            try:
+                                await session.commit()
+                                await event_broadcaster.broadcast("job_progress", {
+                                    "id": job.id,
+                                    "progress": job.progress_percent,
+                                    "fps": job.current_fps,
+                                    "speed": job.current_speed,
+                                    "eta_seconds": job.eta_seconds,
+                                })
+                            except Exception as commit_err:
+                                logger.warning(f"Non-fatal progress commit error for Job #{job.id}: {commit_err}. Rolling back session.")
+                                try:
+                                    await session.rollback()
+                                except Exception:
+                                    pass
+        finally:
+            stderr_task.cancel()
 
 queue_worker = QueueWorker()

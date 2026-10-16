@@ -17,7 +17,7 @@ Base = declarative_base()
 async_engine = create_async_engine(
     settings.DATABASE_URL,
     echo=settings.DEBUG,
-    connect_args={"check_same_thread": False},
+    connect_args={"check_same_thread": False, "timeout": 60},
 )
 
 # Enable SQLite WAL mode and foreign keys for high performance and integrity
@@ -27,6 +27,7 @@ def set_sqlite_pragma(dbapi_connection, connection_record):
     cursor.execute("PRAGMA journal_mode=WAL")
     cursor.execute("PRAGMA synchronous=NORMAL")
     cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.execute("PRAGMA busy_timeout=60000")
     cursor.close()
 
 AsyncSessionLocal = async_sessionmaker(
